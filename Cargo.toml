@@ -21,7 +21,7 @@ quote = "1.0.47"
 proc-macro2 = "1.0.107"
 proc-macro-crate = "3.2.0"
 trybuild = "1.0.101"
-criterion = "0.5.1"
+criterion = "0.8.2"
 
 [workspace.lints.rust]
 missing_docs = "deny"
