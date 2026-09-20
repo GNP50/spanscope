@@ -1475,7 +1475,6 @@ fn snapshot_inner(publish_current: bool) -> Snapshot {
             }
         });
     }
-    let descriptors = lock(&registry.descriptors).clone();
     let mut chains: BTreeMap<Vec<u32>, Stats> = BTreeMap::new();
     let mut threads = Vec::new();
     let mut pending_threads = Vec::new();
@@ -1553,6 +1552,10 @@ fn snapshot_inner(publish_current: bool) -> Snapshot {
             evidence_truncated: root.evidence_truncated,
         })
         .collect();
+    // A thread can register a descriptor and publish its first observation
+    // while we copy slots. Read descriptors afterward so every copied path
+    // resolves to metadata in this snapshot.
+    let descriptors = lock(&registry.descriptors).clone();
     Snapshot {
         started_at: registry.started_at,
         duration_ns: registry
