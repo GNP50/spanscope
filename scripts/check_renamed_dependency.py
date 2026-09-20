@@ -18,7 +18,9 @@ SOURCE.mkdir(parents=True, exist_ok=True)
     '[package]\nname = "renamed-consumer"\nversion = "0.0.0"\n'
     'edition = "2021"\nrust-version = "1.80"\npublish = false\n\n'
     '[workspace]\n\n[dependencies]\n'
-    f'instrumentation = {{ package = "spanscope", path = "{ROOT / "spanscope"}", '
+    # as_posix keeps the Windows drive path free of backslashes, which a TOML
+    # basic string would read as escape sequences.
+    f'instrumentation = {{ package = "spanscope", path = "{(ROOT / "spanscope").as_posix()}", '
     'default-features = false, features = ["enabled"] }\n'
 )
 (SOURCE / "main.rs").write_text(
