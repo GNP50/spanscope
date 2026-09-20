@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""Compile an independent consumer that renames the spanscope dependency."""
+"""Compile an independent consumer that renames the spanscope dependency.
+
+The scratch project has its own root package, so cargo always re-resolves the
+graph instead of reading the copied lock verbatim. Resolving needs the registry
+index, which `--offline` hides, so this check runs online like the rest of CI.
+"""
 import os
 from pathlib import Path
 import shutil
@@ -33,13 +38,13 @@ environment = os.environ.copy()
 environment["CARGO_TARGET_DIR"] = str(ROOT / "target")
 for toolchain in ("stable", "1.80.0"):
     subprocess.run(
-        ["cargo", f"+{toolchain}", "run", "--offline", "--bin", "renamed-consumer",
+        ["cargo", f"+{toolchain}", "run", "--bin", "renamed-consumer",
          "--manifest-path", str(PROJECT / "Cargo.toml")],
         check=True,
         env=environment,
     )
     guard_check = subprocess.run(
-        ["cargo", f"+{toolchain}", "check", "--offline", "--bin", "guard_send",
+        ["cargo", f"+{toolchain}", "check", "--bin", "guard_send",
          "--manifest-path", str(PROJECT / "Cargo.toml")],
         text=True,
         stdout=subprocess.PIPE,
