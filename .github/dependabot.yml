@@ -1,9 +1,6 @@
 version: 2
 
-# Grouped, minor-and-patch only. A major bump of the test runner, the bundler or
-# the benchmark harness needs a human to read the changelog, so Dependabot does
-# not open those: `version-update:semver-major` scopes the ignore to version
-# updates, leaving security updates free to land on any version.
+# Group minor and patch updates. Major version updates need separate review.
 updates:
   - package-ecosystem: cargo
     directory: /
@@ -20,6 +17,9 @@ updates:
       # trybuild 1.0.121 pulls in crates that require a newer Cargo than 1.80.
       - dependency-name: trybuild
         versions: [">= 1.0.121"]
+      # Newer releases pull in TOML crates that Cargo 1.80 cannot parse.
+      - dependency-name: proc-macro-crate
+        versions: ["> 3.2.0"]
 
   - package-ecosystem: npm
     directory: /viewer

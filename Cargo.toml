@@ -13,14 +13,14 @@ keywords = ["profiling", "tracing", "performance", "flamegraph", "instrumentatio
 categories = ["development-tools::profiling", "development-tools::cargo-plugins", "visualization"]
 
 [workspace.dependencies]
-serde = { version = "1.0.228", features = ["derive"] }
+serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
 schemars = "0.8.22"
 syn = { version = "2.0.119", features = ["full", "parsing"] }
 quote = "1.0.47"
 proc-macro2 = "1.0.107"
-proc-macro-crate = "3.2.0"
-trybuild = "1.0.101"
+proc-macro-crate = "=3.2.0"
+trybuild = "=1.0.101"
 criterion = "0.5.1"
 
 [workspace.lints.rust]
