@@ -1,0 +1,5 @@
+error: const fn instrumentation requires runtime timing and is unsupported
+ --> tests/ui/fail_const.rs:2:1
+  |
+2 | const fn value() -> u32 {
+  | ^^^^^

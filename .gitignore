@@ -1,0 +1,11 @@
+/target/
+/viewer/node_modules/
+/viewer/dist/
+/viewer/test-results/
+/viewer/playwright-report/
+__pycache__/
+/.cache/
+*.profraw
+/profile.json
+/profile.json.gz
+/report/

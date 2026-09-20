@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "meta": {
+    "program": "synthetic-contract-fixture",
+    "version": null,
+    "git_sha": null,
+    "host": {
+      "os": "linux",
+      "arch": "x86_64"
+    },
+    "started_at": "2026-09-19T12:00:00Z",
+    "duration_ns": 9007199254740993,
+    "threads": 0,
+    "features": [],
+    "capture": {
+      "sample_rate": 1.0,
+      "sampled_out_roots": 0,
+      "evicted_roots": 0,
+      "dropped_records": 0,
+      "snapshot_complete": true,
+      "pending_threads": [],
+      "rss_supported": false
+    }
+  },
+  "spans": [],
+  "chains": [],
+  "graph": {
+    "nodes": [],
+    "edges": []
+  },
+  "roots": [],
+  "threads": [],
+  "analysis": {
+    "status": "skipped",
+    "insights": [],
+    "sections": {}
+  }
+}

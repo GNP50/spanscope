@@ -1,0 +1,5 @@
+error: duplicate root option
+ --> tests/ui/fail_duplicate.rs:1:26
+  |
+1 | #[spanscope::trace(root, root)]
+  |                          ^^^^

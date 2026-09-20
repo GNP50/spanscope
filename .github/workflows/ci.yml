@@ -1,0 +1,76 @@
+name: Rust contracts
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  rust:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        toolchain: [stable, "1.80.0"]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ matrix.toolchain }}
+      - run: cargo test --workspace --locked
+      - run: cargo test --workspace --all-features --locked
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python scripts/check_features.py
+      - run: python scripts/check_renamed_dependency.py
+
+  contracts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install -r scripts/requirements.txt
+      - run: cargo fmt --all --check
+      - run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+      - run: cargo doc --workspace --no-deps --all-features --locked
+        env:
+          RUSTDOCFLAGS: -D warnings
+      - run: python scripts/check_contract.py
+      - run: python scripts/check_packages.py
+      - run: cargo install cargo-expand --version 1.0.118 --locked
+      - run: python scripts/check_disabled_expansion.py
+
+  viewer:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: viewer/package-lock.json
+      - run: npm ci
+        working-directory: viewer
+      - run: npm run build
+        working-directory: viewer
+      - run: npm run verify:asset
+        working-directory: viewer
+      - run: npm test
+        working-directory: viewer
+      - run: cargo build -p cargo-spanscope --locked
+      - run: npx playwright install --with-deps chromium
+        working-directory: viewer
+      - run: npm run test:e2e
+        working-directory: viewer
+
+  # Publishing is intentionally manual and requires registry credentials.

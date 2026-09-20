@@ -1,0 +1,1196 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Profile",
+  "description": "A complete serialized profile; vectors are streamed by the future writer.",
+  "type": "object",
+  "required": [
+    "analysis",
+    "chains",
+    "graph",
+    "meta",
+    "roots",
+    "schema_version",
+    "spans",
+    "threads"
+  ],
+  "properties": {
+    "analysis": {
+      "description": "Analysis results and explicit completion state.",
+      "allOf": [
+        {
+          "$ref": "#/definitions/Analysis"
+        }
+      ]
+    },
+    "chains": {
+      "description": "Aggregated observed chain measurements.",
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/Chain"
+      }
+    },
+    "graph": {
+      "description": "Aggregated span-to-span graph, not an execution DAG.",
+      "allOf": [
+        {
+          "$ref": "#/definitions/Graph"
+        }
+      ]
+    },
+    "meta": {
+      "description": "Program and capture metadata.",
+      "allOf": [
+        {
+          "$ref": "#/definitions/Metadata"
+        }
+      ]
+    },
+    "roots": {
+      "description": "Retained per-invocation root snapshots, ordered by start time and UID.",
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/Root"
+      }
+    },
+    "schema_version": {
+      "description": "Format version. Only version 1 is defined by this draft.",
+      "type": "integer",
+      "format": "uint32",
+      "maximum": 1.0,
+      "minimum": 1.0
+    },
+    "spans": {
+      "description": "Static span descriptors, sorted by stable identity before assigning IDs.",
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/Span"
+      }
+    },
+    "threads": {
+      "description": "Participating threads, including threads that have exited.",
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/Thread"
+      }
+    }
+  },
+  "definitions": {
+    "Analysis": {
+      "description": "Analysis envelope; algorithm-specific sections are currently empty.",
+      "type": "object",
+      "required": [
+        "insights",
+        "sections",
+        "status"
+      ],
+      "properties": {
+        "insights": {
+          "description": "Evidence-backed insights; never use fake scores for unimplemented algorithms.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Insight"
+          }
+        },
+        "sections": {
+          "description": "Named sections (critical_paths, clusters, embedding, complexity, changepoints, anomalies).",
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/definitions/AnalysisSection"
+          }
+        },
+        "status": {
+          "description": "Overall analysis completion state.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/AnalysisStatus"
+            }
+          ]
+        }
+      }
+    },
+    "AnalysisSection": {
+      "description": "Completion information and a draft algorithm-specific result payload.",
+      "type": "object",
+      "required": [
+        "data",
+        "explanation",
+        "status"
+      ],
+      "properties": {
+        "data": {
+          "description": "Draft payload; replace with typed results before publishing analysis support."
+        },
+        "explanation": {
+          "description": "Explanation of skips, limitations, or computation assumptions.",
+          "type": "string"
+        },
+        "status": {
+          "description": "Section completion state.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/AnalysisStatus"
+            }
+          ]
+        }
+      }
+    },
+    "AnalysisStatus": {
+      "description": "Analysis completion state for the run or an individual section.",
+      "oneOf": [
+        {
+          "description": "Algorithm completed with the available evidence.",
+          "type": "string",
+          "enum": [
+            "complete"
+          ]
+        },
+        {
+          "description": "Algorithm was disabled or not run.",
+          "type": "string",
+          "enum": [
+            "skipped"
+          ]
+        },
+        {
+          "description": "Available evidence cannot support a meaningful result.",
+          "type": "string",
+          "enum": [
+            "insufficient_data"
+          ]
+        },
+        {
+          "description": "Cooperative deadline expired; no claim of complete results.",
+          "type": "string",
+          "enum": [
+            "budget_exhausted"
+          ]
+        }
+      ]
+    },
+    "Capture": {
+      "description": "Capture quality and snapshot semantics.",
+      "type": "object",
+      "required": [
+        "dropped_records",
+        "evicted_roots",
+        "pending_threads",
+        "rss_supported",
+        "sample_rate",
+        "sampled_out_roots",
+        "snapshot_complete"
+      ],
+      "properties": {
+        "dropped_records": {
+          "description": "Records lost to overflow or other diagnosed collection failures.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        },
+        "evicted_roots": {
+          "description": "Roots evicted from the bounded history, distinct from unsampled roots.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        },
+        "pending_threads": {
+          "description": "Thread IDs without an acknowledged checkpoint for this epoch.",
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          }
+        },
+        "rss_supported": {
+          "description": "RSS capability; zero RSS alone never indicates support.",
+          "type": "boolean"
+        },
+        "sample_rate": {
+          "description": "Probability of retaining an independently sampled root/subtree.",
+          "type": "number",
+          "format": "double",
+          "maximum": 1.0,
+          "minimum": 0.0
+        },
+        "sampled_out_roots": {
+          "description": "Exact observed counters are never rescaled by the sampling probability.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        },
+        "snapshot_complete": {
+          "description": "Whether all requested participants acknowledged this snapshot epoch.",
+          "type": "boolean"
+        }
+      }
+    },
+    "Chain": {
+      "description": "Observed aggregate statistics for an interned call chain.",
+      "type": "object",
+      "required": [
+        "active_ns",
+        "alloc_bytes",
+        "allocs",
+        "cancelled",
+        "count",
+        "histogram",
+        "id",
+        "m2_ns2",
+        "max_ns",
+        "mean_ns",
+        "min_ns",
+        "p50_ns",
+        "p90_ns",
+        "p99_ns",
+        "path",
+        "poll_count",
+        "self_ns",
+        "self_time_kind",
+        "std_ns",
+        "total_ns"
+      ],
+      "properties": {
+        "active_ns": {
+          "description": "Inclusive active time, excluding suspension between future polls.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        },
+        "alloc_bytes": {
+          "description": "Gross allocation bytes attributed directly to this chain, excluding profiler work.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        },
+        "allocs": {
+          "description": "Successful allocation/reallocation operations attributed directly to this chain.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        },
+        "cancelled": {
+          "description": "Subset of invocations dropped before successful completion.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        },
+        "count": {
+          "description": "Observed completed or cancelled invocations.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        },
+        "histogram": {
+          "description": "Mergeable histogram metadata and buckets.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/Histogram"
+            }
+          ]
+        },
+        "id": {
+          "description": "Profile-local chain identifier.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "m2_ns2": {
+          "description": "Welford centered sum of squares (M2), not a raw sum of squares.",
+          "type": "number",
+          "format": "double",
+          "minimum": 0.0
+        },
+        "max_ns": {
+          "description": "Maximum observed duration, or zero for an empty aggregate.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        },
+        "mean_ns": {
+          "description": "Arithmetic mean of observed wall durations.",
+          "type": "number",
+          "format": "double",
+          "minimum": 0.0
+        },
+        "min_ns": {
+          "description": "Minimum observed duration, or zero for an empty aggregate.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        },
+        "p50_ns": {
+          "description": "Approximate median wall duration.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        },
+        "p90_ns": {
+          "description": "Approximate 90th percentile wall duration.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        },
+        "p99_ns": {
+          "description": "Approximate 99th percentile wall duration.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        },
+        "path": {
+          "description": "Nonempty path of span IDs from root to leaf.",
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "minItems": 1
+        },
+        "poll_count": {
+          "description": "Number of future polls; zero for synchronous spans.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        },
+        "self_ns": {
+          "description": "Exclusive active execution time; see `self_time_kind`.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        },
+        "self_time_kind": {
+          "description": "Meaning of `self_ns`; wall time is not additive across concurrent tasks.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/SelfTimeKind"
+            }
+          ]
+        },
+        "std_ns": {
+          "description": "Population standard deviation of observed wall durations.",
+          "type": "number",
+          "format": "double",
+          "minimum": 0.0
+        },
+        "total_ns": {
+          "description": "Sum of inclusive wall durations of observed invocations.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        }
+      }
+    },
+    "Completion": {
+      "description": "How a recorded invocation finished.",
+      "oneOf": [
+        {
+          "description": "Returned normally, with no known unfinished propagated children.",
+          "type": "string",
+          "enum": [
+            "complete"
+          ]
+        },
+        {
+          "description": "Future dropped before completion or function unwound.",
+          "type": "string",
+          "enum": [
+            "cancelled"
+          ]
+        },
+        {
+          "description": "Root ended with unfinished children or incomplete capture evidence.",
+          "type": "string",
+          "enum": [
+            "incomplete"
+          ]
+        }
+      ]
+    },
+    "Dependency": {
+      "description": "Causal relationship between exclusive segments, recorded explicitly.",
+      "type": "object",
+      "required": [
+        "from",
+        "kind",
+        "to"
+      ],
+      "properties": {
+        "from": {
+          "description": "Source segment ID within the same root.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        },
+        "kind": {
+          "description": "Causal relationship kind.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/DependencyKind"
+            }
+          ]
+        },
+        "to": {
+          "description": "Destination segment ID within the same root.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        }
+      }
+    },
+    "DependencyKind": {
+      "description": "Meaning of an invocation dependency.",
+      "oneOf": [
+        {
+          "description": "Parent initiated a child; this alone does not imply a later join.",
+          "type": "string",
+          "enum": [
+            "spawn"
+          ]
+        },
+        {
+          "description": "Source completed before destination could resume.",
+          "type": "string",
+          "enum": [
+            "join"
+          ]
+        },
+        {
+          "description": "Sequential execution with an observed happens-before relationship.",
+          "type": "string",
+          "enum": [
+            "sequential"
+          ]
+        }
+      ]
+    },
+    "Evidence": {
+      "description": "IDs for evidence navigation; references must resolve in this profile.",
+      "type": "object",
+      "required": [
+        "chains",
+        "roots",
+        "spans"
+      ],
+      "properties": {
+        "chains": {
+          "description": "Chain IDs supporting the insight.",
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          }
+        },
+        "roots": {
+          "description": "Root UIDs supporting the insight.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "spans": {
+          "description": "Span IDs supporting the insight.",
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          }
+        }
+      }
+    },
+    "EvidenceStatus": {
+      "description": "Availability of optional causal evidence.",
+      "oneOf": [
+        {
+          "description": "Optional event capture was disabled.",
+          "type": "string",
+          "enum": [
+            "not_captured"
+          ]
+        },
+        {
+          "description": "Required start, finish, and dependency evidence was retained.",
+          "type": "string",
+          "enum": [
+            "complete"
+          ]
+        },
+        {
+          "description": "Some events or causal relationships are missing.",
+          "type": "string",
+          "enum": [
+            "partial"
+          ]
+        },
+        {
+          "description": "The configured evidence limit was reached.",
+          "type": "string",
+          "enum": [
+            "truncated"
+          ]
+        }
+      ]
+    },
+    "ExecutionEvidence": {
+      "description": "Optional bounded evidence for an invocation DAG.",
+      "type": "object",
+      "required": [
+        "dependencies",
+        "invocations",
+        "segments",
+        "status"
+      ],
+      "properties": {
+        "dependencies": {
+          "description": "Explicit causal dependencies between segments, not aggregate invocations.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Dependency"
+          }
+        },
+        "invocations": {
+          "description": "Recorded invocation intervals; IDs are local to this root.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Invocation"
+          }
+        },
+        "segments": {
+          "description": "Non-overlapping active segments split at spawn, join, and suspension events.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ExecutionSegment"
+          }
+        },
+        "status": {
+          "description": "Whether causal evidence is sufficient for observed critical-path analysis.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/EvidenceStatus"
+            }
+          ]
+        }
+      }
+    },
+    "ExecutionSegment": {
+      "description": "Active exclusive interval, split at every captured causal boundary.",
+      "type": "object",
+      "required": [
+        "id",
+        "invocation",
+        "t_end_ns",
+        "t_start_ns",
+        "thread"
+      ],
+      "properties": {
+        "id": {
+          "description": "Root-local segment identifier, in a namespace separate from invocation IDs.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        },
+        "invocation": {
+          "description": "Invocation that directly owns this exclusive execution segment.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        },
+        "t_end_ns": {
+          "description": "Monotonic end offset from the capture origin.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        },
+        "t_start_ns": {
+          "description": "Monotonic start offset from the capture origin.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        },
+        "thread": {
+          "description": "Thread executing this segment; a future can have segments on different threads.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        }
+      }
+    },
+    "Graph": {
+      "description": "Aggregated call graph; recursive span paths can produce cycles.",
+      "type": "object",
+      "required": [
+        "edges",
+        "nodes"
+      ],
+      "properties": {
+        "edges": {
+          "description": "Direct parent-to-child relationships only.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/GraphEdge"
+          }
+        },
+        "nodes": {
+          "description": "Measurements summed by terminal span identity.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/GraphNode"
+          }
+        }
+      }
+    },
+    "GraphEdge": {
+      "description": "Aggregated direct call relationship.",
+      "type": "object",
+      "required": [
+        "calls",
+        "from",
+        "to",
+        "total_ns"
+      ],
+      "properties": {
+        "calls": {
+          "description": "Observed child invocations.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        },
+        "from": {
+          "description": "Parent span ID.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "to": {
+          "description": "Child span ID.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "total_ns": {
+          "description": "Sum of inclusive child wall durations, potentially overlapping.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        }
+      }
+    },
+    "GraphNode": {
+      "description": "Aggregated measurements for a span across all chains.",
+      "type": "object",
+      "required": [
+        "calls",
+        "self_ns",
+        "span",
+        "total_ns"
+      ],
+      "properties": {
+        "calls": {
+          "description": "Observed invocation count.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        },
+        "self_ns": {
+          "description": "Sum of exclusive active durations.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        },
+        "span": {
+          "description": "Span ID.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "total_ns": {
+          "description": "Sum of inclusive wall durations.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        }
+      }
+    },
+    "Histogram": {
+      "description": "Bounded histogram representation; boundaries carry their actual approximation.",
+      "type": "object",
+      "required": [
+        "algorithm",
+        "buckets",
+        "precision"
+      ],
+      "properties": {
+        "algorithm": {
+          "description": "Algorithm identifier, for example `hdr` or `ddsketch`.",
+          "type": "string"
+        },
+        "buckets": {
+          "description": "Increasing, non-overlapping buckets with inclusive upper bounds.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/HistogramBucket"
+          }
+        },
+        "precision": {
+          "description": "Human-readable precision/configuration; no unqualified exact quantile claim.",
+          "type": "string"
+        }
+      }
+    },
+    "HistogramBucket": {
+      "description": "Observed duration frequency below one inclusive upper bound.",
+      "type": "object",
+      "required": [
+        "count",
+        "upper_ns"
+      ],
+      "properties": {
+        "count": {
+          "description": "Observed invocations within this bucket.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        },
+        "upper_ns": {
+          "description": "Inclusive upper duration bound in nanoseconds.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        }
+      }
+    },
+    "Host": {
+      "description": "Non-sensitive host platform facts.",
+      "type": "object",
+      "required": [
+        "arch",
+        "os"
+      ],
+      "properties": {
+        "arch": {
+          "description": "Target architecture, such as `x86_64`.",
+          "type": "string"
+        },
+        "os": {
+          "description": "Operating system identifier, such as `linux`.",
+          "type": "string"
+        }
+      }
+    },
+    "Insight": {
+      "description": "Human-readable conclusion backed by explicit profile identities.",
+      "type": "object",
+      "required": [
+        "data",
+        "evidence",
+        "explanation",
+        "kind",
+        "severity",
+        "title"
+      ],
+      "properties": {
+        "data": {
+          "description": "Algorithm-specific numeric or structural evidence."
+        },
+        "evidence": {
+          "description": "Profile objects that support this conclusion.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/Evidence"
+            }
+          ]
+        },
+        "explanation": {
+          "description": "Evidence, assumptions, and limitations in plain language.",
+          "type": "string"
+        },
+        "kind": {
+          "description": "Algorithm/category identifier.",
+          "type": "string"
+        },
+        "severity": {
+          "description": "Presentation severity, not a probability.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/Severity"
+            }
+          ]
+        },
+        "title": {
+          "description": "Short summary.",
+          "type": "string"
+        }
+      }
+    },
+    "Invocation": {
+      "description": "Observed invocation interval within a root.",
+      "type": "object",
+      "required": [
+        "chain",
+        "id",
+        "t_end_ns",
+        "t_start_ns",
+        "thread"
+      ],
+      "properties": {
+        "chain": {
+          "description": "Profile chain ID.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "id": {
+          "description": "Root-local invocation ID.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        },
+        "parent": {
+          "description": "Root-local logical parent, if captured.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint64",
+          "minimum": 0.0
+        },
+        "t_end_ns": {
+          "description": "Capture-relative monotonic end offset.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        },
+        "t_start_ns": {
+          "description": "Capture-relative monotonic start offset.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        },
+        "thread": {
+          "description": "Thread where this invocation started.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        }
+      }
+    },
+    "Metadata": {
+      "description": "Capture metadata with explicit data-quality information.",
+      "type": "object",
+      "required": [
+        "capture",
+        "duration_ns",
+        "features",
+        "host",
+        "program",
+        "started_at",
+        "threads"
+      ],
+      "properties": {
+        "capture": {
+          "description": "Capture sampling and completeness evidence.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/Capture"
+            }
+          ]
+        },
+        "duration_ns": {
+          "description": "Monotonic elapsed capture duration in nanoseconds.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        },
+        "features": {
+          "description": "Sorted enabled capability names.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "git_sha": {
+          "description": "Application source revision if supplied by the host.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "host": {
+          "description": "Host facts; do not include environment variables or credentials.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/Host"
+            }
+          ]
+        },
+        "program": {
+          "description": "Executable name.",
+          "type": "string"
+        },
+        "started_at": {
+          "description": "RFC 3339 UTC capture start time.",
+          "type": "string"
+        },
+        "threads": {
+          "description": "Number of registered threads, including exited threads.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "version": {
+          "description": "Application version if supplied by the host.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "Root": {
+      "description": "Immutable snapshot of one retained root invocation.",
+      "type": "object",
+      "required": [
+        "chain_self_ns",
+        "chains",
+        "completion",
+        "duration_ns",
+        "execution",
+        "metrics",
+        "rss_entry_kb",
+        "rss_exit_kb",
+        "span",
+        "t_start_ns",
+        "thread",
+        "uid"
+      ],
+      "properties": {
+        "chain_self_ns": {
+          "description": "Root-local exclusive active time per chain, needed for root flame graphs.",
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          }
+        },
+        "chains": {
+          "description": "Compact root-local aggregates: `[chain_id, observed_count, total_wall_ns]`.",
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": [
+              {
+                "type": "integer",
+                "format": "uint32",
+                "minimum": 0.0
+              },
+              {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0.0
+              },
+              {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0.0
+              }
+            ],
+            "maxItems": 3,
+            "minItems": 3
+          }
+        },
+        "completion": {
+          "description": "Completion or cancellation state, including truncated root evidence.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/Completion"
+            }
+          ]
+        },
+        "duration_ns": {
+          "description": "Wall duration until completion or cancellation.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        },
+        "execution": {
+          "description": "Causal invocation evidence; aggregates alone cannot give exact critical paths.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/ExecutionEvidence"
+            }
+          ]
+        },
+        "metrics": {
+          "description": "Numeric root features; repeated keys use the last recorded value.",
+          "type": "object",
+          "additionalProperties": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "rss_entry_kb": {
+          "description": "Linux resident set size at entry, in KiB; zero if unsupported.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        },
+        "rss_exit_kb": {
+          "description": "Linux resident set size at exit, in KiB; zero if unsupported.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        },
+        "span": {
+          "description": "Root span ID.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "t_start_ns": {
+          "description": "Monotonic start offset from the capture origin.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        },
+        "thread": {
+          "description": "Origin thread ID (the future may subsequently migrate).",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "uid": {
+          "description": "Unique UUID string for this invocation.",
+          "type": "string"
+        }
+      }
+    },
+    "SelfTimeKind": {
+      "description": "Exclusive-time interpretation for a record.",
+      "oneOf": [
+        {
+          "description": "Synchronous same-thread wall time minus directly nested child intervals.",
+          "type": "string",
+          "enum": [
+            "synchronous"
+          ]
+        },
+        {
+          "description": "Active execution during polls, minus directly nested active child intervals.",
+          "type": "string",
+          "enum": [
+            "active"
+          ]
+        },
+        {
+          "description": "Required evidence was not captured; `self_ns` must be zero.",
+          "type": "string",
+          "enum": [
+            "unavailable"
+          ]
+        }
+      ]
+    },
+    "Severity": {
+      "description": "Presentation priority for an insight.",
+      "oneOf": [
+        {
+          "description": "Informational pattern.",
+          "type": "string",
+          "enum": [
+            "info"
+          ]
+        },
+        {
+          "description": "Potential issue requiring interpretation.",
+          "type": "string",
+          "enum": [
+            "warning"
+          ]
+        },
+        {
+          "description": "High-impact observed issue.",
+          "type": "string",
+          "enum": [
+            "critical"
+          ]
+        }
+      ]
+    },
+    "Span": {
+      "description": "Static span identity and source metadata.",
+      "type": "object",
+      "required": [
+        "file",
+        "id",
+        "line",
+        "name",
+        "tags"
+      ],
+      "properties": {
+        "file": {
+          "description": "Source file from the instrumented call site.",
+          "type": "string"
+        },
+        "id": {
+          "description": "Profile-local span identifier.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "line": {
+          "description": "One-based source line.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 1.0
+        },
+        "name": {
+          "description": "Fully qualified default name or the user-supplied name.",
+          "type": "string"
+        },
+        "tags": {
+          "description": "User-defined labels, sorted and deduplicated on export.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "Thread": {
+      "description": "Per-thread active utilization.",
+      "type": "object",
+      "required": [
+        "busy_ns",
+        "exited",
+        "id"
+      ],
+      "properties": {
+        "busy_ns": {
+          "description": "Union of instrumented active intervals; nested spans are not counted twice.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        },
+        "exited": {
+          "description": "Whether the thread has published its final checkpoint.",
+          "type": "boolean"
+        },
+        "id": {
+          "description": "Profile-local thread ID.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "name": {
+          "description": "Optional thread name assigned by the application.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    }
+  }
+}
