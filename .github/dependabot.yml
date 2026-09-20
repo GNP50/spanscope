@@ -14,9 +14,9 @@ updates:
     ignore:
       - dependency-name: "*"
         update-types: ["version-update:semver-major"]
-      # trybuild 1.0.121 pulls in crates that require a newer Cargo than 1.80.
+      # Hold trybuild here until a Rust 1.80-compatible update is verified.
       - dependency-name: trybuild
-        versions: [">= 1.0.121"]
+        versions: ["> 1.0.101"]
       # Newer releases pull in TOML crates that Cargo 1.80 cannot parse.
       - dependency-name: proc-macro-crate
         versions: ["> 3.2.0"]
