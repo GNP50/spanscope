@@ -1,18 +1,44 @@
 version: 2
+
+# Grouped, minor-and-patch only. A major bump of the test runner, the bundler or
+# the benchmark harness needs a human to read the changelog, so Dependabot does
+# not open those: `version-update:semver-major` scopes the ignore to version
+# updates, leaving security updates free to land on any version.
 updates:
   - package-ecosystem: cargo
     directory: /
     schedule:
       interval: weekly
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 3
+    groups:
+      cargo:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+      # trybuild 1.0.121 pulls in crates that require a newer Cargo than 1.80.
+      - dependency-name: trybuild
+        versions: [">= 1.0.121"]
 
   - package-ecosystem: npm
     directory: /viewer
     schedule:
       interval: weekly
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 3
+    groups:
+      viewer:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
+    open-pull-requests-limit: 3
+    groups:
+      actions:
+        patterns: ["*"]
