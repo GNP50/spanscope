@@ -62,7 +62,7 @@ export interface Profile {
   [k: string]: unknown;
 }
 /**
- * Analysis envelope; algorithm-specific sections are currently empty.
+ * Analysis envelope containing evidence-backed deterministic or optional results.
  */
 export interface Analysis {
   /**
@@ -424,6 +424,12 @@ export interface Host {
  */
 export interface Root {
   /**
+   * Bounded string attributes recorded for grouping and filtering.
+   */
+  attributes?: {
+    [k: string]: string;
+  };
+  /**
    * Root-local exclusive active time per chain, needed for root flame graphs.
    */
   chain_self_ns: {
@@ -451,6 +457,10 @@ export interface Root {
   metrics: {
     [k: string]: number;
   };
+  /**
+   * Optional application-defined result such as `ok`, `error`, or `timeout`.
+   */
+  outcome?: string | null;
   /**
    * Linux resident set size at entry, in KiB; zero if unsupported.
    */

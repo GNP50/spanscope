@@ -1,10 +1,12 @@
 import { create } from 'zustand';
 import type { ProfileIndex } from './core';
 
-export type View = 'overview' | 'routines' | 'runs' | 'dependencies' | 'flame' | 'chains' | 'raw';
+export type View = 'overview' | 'compare' | 'insights' | 'timeline' | 'routines' | 'runs' | 'dependencies' | 'flame' | 'chains' | 'raw';
 interface State {
   index: ProfileIndex | null;
   filename: string;
+  baselineIndex: ProfileIndex | null;
+  baselineFilename: string;
   view: View;
   theme: 'dark' | 'light';
   query: string;
@@ -12,6 +14,7 @@ interface State {
   chainId: number | null;
   rootUid: string | null;
   setIndex: (index: ProfileIndex, filename: string) => void;
+  setBaseline: (index: ProfileIndex, filename: string) => void;
   setView: (view: View) => void;
   setTheme: (theme: 'dark' | 'light') => void;
   setQuery: (query: string) => void;
@@ -24,7 +27,7 @@ interface State {
 function fromHash() {
   const params = new URLSearchParams(location.hash.replace(/^#/, ''));
   const candidate = params.get('view');
-  const view: View = candidate === 'routines' || candidate === 'runs' || candidate === 'dependencies' || candidate === 'flame' || candidate === 'chains' || candidate === 'raw' ? candidate : 'overview';
+  const view: View = candidate === 'compare' || candidate === 'insights' || candidate === 'timeline' || candidate === 'routines' || candidate === 'runs' || candidate === 'dependencies' || candidate === 'flame' || candidate === 'chains' || candidate === 'raw' ? candidate : 'overview';
   const span = params.get('span');
   return {
     view,
@@ -36,9 +39,10 @@ function fromHash() {
 
 const initial = fromHash();
 export const useProfile = create<State>((set) => ({
-  index: null, filename: '', view: initial.view, theme: 'dark',
+  index: null, filename: '', baselineIndex: null, baselineFilename: '', view: initial.view, theme: 'dark',
   query: initial.query, spanId: initial.spanId, chainId: null, rootUid: initial.rootUid,
   setIndex: (index, filename) => set({ index, filename }),
+  setBaseline: (baselineIndex, baselineFilename) => set({ baselineIndex, baselineFilename, view: 'compare' }),
   setView: view => set({ view }),
   setTheme: theme => set({ theme }),
   setQuery: query => set({ query }),

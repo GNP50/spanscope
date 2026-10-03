@@ -245,6 +245,12 @@ pub struct Root {
     pub rss_exit_kb: u64,
     /// Numeric root features; repeated keys use the last recorded value.
     pub metrics: BTreeMap<String, f64>,
+    /// Bounded string attributes recorded for grouping and filtering.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub attributes: BTreeMap<String, String>,
+    /// Optional application-defined result such as `ok`, `error`, or `timeout`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub outcome: Option<String>,
     /// Compact root-local aggregates: `[chain_id, observed_count, total_wall_ns]`.
     pub chains: Vec<(u32, u64, u64)>,
     /// Root-local exclusive active time per chain, needed for root flame graphs.
@@ -370,7 +376,7 @@ pub struct Thread {
     pub exited: bool,
 }
 
-/// Analysis envelope; algorithm-specific sections are currently empty.
+/// Analysis envelope containing evidence-backed deterministic or optional results.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Analysis {

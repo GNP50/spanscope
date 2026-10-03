@@ -126,6 +126,53 @@ export function filterChains(index: ProfileIndex, filters: Filters): ExactChain[
 }
 
 export interface FlameNode { key: string; spanId: number; depth: number; parent: string | null; self: bigint; weight: bigint; }
+
+export interface CriticalPath { segmentIds: number[]; durationNs: bigint; complete: boolean; }
+
+/** Longest weighted path through explicitly captured causal segment edges. */
+export function buildCriticalPath(root: ExactRoot): CriticalPath | null {
+  if (root.execution.segments.length === 0) return null;
+  const segments = new Map(root.execution.segments.map(segment => [asNumber(segment.id), segment]));
+  const incoming = new Map<number, number[]>();
+  const outgoing = new Map<number, number[]>();
+  const degree = new Map<number, number>();
+  for (const id of segments.keys()) degree.set(id, 0);
+  for (const edge of root.execution.dependencies) {
+    const from = asNumber(edge.from), to = asNumber(edge.to);
+    if (!segments.has(from) || !segments.has(to)) continue;
+    incoming.set(to, [...(incoming.get(to) ?? []), from]);
+    outgoing.set(from, [...(outgoing.get(from) ?? []), to]);
+    degree.set(to, (degree.get(to) ?? 0) + 1);
+  }
+  const ready = [...degree].filter(([, value]) => value === 0).map(([id]) => id).sort((a, b) => a - b);
+  const best = new Map<number, { duration: bigint; previous: number | null }>();
+  let visited = 0;
+  while (ready.length) {
+    const id = ready.shift()!;
+    visited += 1;
+    const segment = segments.get(id)!;
+    const weight = asBigInt(segment.t_end_ns) - asBigInt(segment.t_start_ns);
+    let prior: { duration: bigint; previous: number | null } = { duration: 0n, previous: null };
+    for (const parent of incoming.get(id) ?? []) {
+      const candidate = best.get(parent);
+      if (candidate && (candidate.duration > prior.duration || candidate.duration === prior.duration && (prior.previous === null || parent < prior.previous))) prior = { duration: candidate.duration, previous: parent };
+    }
+    best.set(id, { duration: prior.duration + weight, previous: prior.previous });
+    for (const child of outgoing.get(id) ?? []) {
+      degree.set(child, (degree.get(child) ?? 1) - 1);
+      if (degree.get(child) === 0) { ready.push(child); ready.sort((a, b) => a - b); }
+    }
+  }
+  if (visited !== segments.size) return null;
+  const end = [...best].sort((left, right) => right[1].duration > left[1].duration ? 1 : right[1].duration < left[1].duration ? -1 : left[0] - right[0])[0];
+  if (!end) return null;
+  const path: number[] = [];
+  let current: number | null = end[0];
+  while (current !== null) { path.push(current); current = best.get(current)?.previous ?? null; }
+  path.reverse();
+  return { segmentIds: path, durationNs: end[1].duration, complete: root.execution.status === 'complete' };
+}
+
 export function buildFlame(chains: ExactChain[]): FlameNode[] {
   const nodes = new Map<string, FlameNode>();
   for (const chain of chains) {

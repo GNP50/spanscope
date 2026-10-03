@@ -2,11 +2,16 @@
 
 #[spanscope::trace(root, name = "demo::workload", tags("example"))]
 fn workload(size: u64) -> u64 {
+    spanscope::attribute!(
+        "workload.class",
+        if size >= 200 { "large" } else { "small" }
+    );
     let mut total = 0;
     for value in 0..size {
         total += transform(value);
     }
     spanscope::metric!("input_size", size);
+    spanscope::outcome!("ok");
     total
 }
 

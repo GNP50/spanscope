@@ -1,5 +1,9 @@
 //! Cargo subcommand that turns a spanscope profile into a single-file offline report.
 
+mod compare;
+mod interop;
+
+use compare::{GateRule, Violation};
 use flate2::read::GzDecoder;
 use spanscope::profile::Profile;
 use std::ffi::OsStr;
@@ -14,13 +18,22 @@ const DEFAULT_INLINE_LIMIT: usize = 50 * 1024 * 1024;
 #[derive(Debug)]
 struct Options {
     input: PathBuf,
+    baseline: Option<PathBuf>,
     output: PathBuf,
     open: bool,
     inline_limit: usize,
+    fail_if: Vec<GateRule>,
+    summary: Option<PathBuf>,
+    exports: Vec<interop::ExportSpec>,
+}
+
+struct ReportOutcome {
+    path: PathBuf,
+    violations: Vec<Violation>,
 }
 
 fn usage() -> &'static str {
-    "cargo spanscope <profile.json|profile.json.gz> [--output DIR] [--open] [--inline-limit-mib N]\n\nCreates DIR/index.html. Profiles up to 50 MiB uncompressed are safely embedded. Larger profiles produce a sidecar and a file-picker report. --open (or SPANSCOPE_OPEN=1) launches the report in the default browser."
+    "cargo spanscope <candidate.json|candidate.json.gz> [--baseline PROFILE] [--fail-if METRIC:+PERCENT%] [--summary FILE] [--export FORMAT:FILE] [--output DIR] [--open] [--inline-limit-mib N]\n\nCreates DIR/index.html. --baseline embeds an earlier profile for comparison. Repeat --fail-if with self, p99, calls, or alloc to fail a regression gate. Repeat --export with chrome, perfetto, or speedscope for interoperable traces."
 }
 
 fn parse_args() -> Result<Option<Options>, String> {
@@ -40,9 +53,13 @@ fn parse_args() -> Result<Option<Options>, String> {
         return Ok(None);
     }
     let mut input = None;
+    let mut baseline = None;
     let mut output = None;
     let mut open = std::env::var("SPANSCOPE_OPEN").is_ok_and(|value| value == "1");
     let mut inline_limit = DEFAULT_INLINE_LIMIT;
+    let mut fail_if = Vec::new();
+    let mut summary = None;
+    let mut exports = Vec::new();
     let mut position = 0;
     while position < args.len() {
         let argument = &args[position];
@@ -51,6 +68,31 @@ fn parse_args() -> Result<Option<Options>, String> {
             output = Some(PathBuf::from(
                 args.get(position).ok_or("--output needs a directory")?,
             ));
+        } else if argument == "--baseline" {
+            position += 1;
+            baseline = Some(PathBuf::from(
+                args.get(position)
+                    .ok_or("--baseline needs a profile path")?,
+            ));
+        } else if argument == "--fail-if" {
+            position += 1;
+            let value = args
+                .get(position)
+                .ok_or("--fail-if needs METRIC:+PERCENT%")?
+                .to_string_lossy();
+            fail_if.push(GateRule::parse(&value)?);
+        } else if argument == "--summary" {
+            position += 1;
+            summary = Some(PathBuf::from(
+                args.get(position).ok_or("--summary needs a file path")?,
+            ));
+        } else if argument == "--export" {
+            position += 1;
+            let value = args
+                .get(position)
+                .ok_or("--export needs FORMAT:PATH")?
+                .to_string_lossy();
+            exports.push(interop::ExportSpec::parse(&value)?);
         } else if argument == "--inline-limit-mib" {
             position += 1;
             let amount = args
@@ -75,6 +117,9 @@ fn parse_args() -> Result<Option<Options>, String> {
         position += 1;
     }
     let input: PathBuf = input.ok_or("provide a profile path")?;
+    if baseline.is_none() && (!fail_if.is_empty() || summary.is_some()) {
+        return Err("--fail-if and --summary require --baseline".into());
+    }
     let output = output.unwrap_or_else(|| {
         input
             .parent()
@@ -83,9 +128,13 @@ fn parse_args() -> Result<Option<Options>, String> {
     });
     Ok(Some(Options {
         input,
+        baseline,
         output,
         open,
         inline_limit,
+        fail_if,
+        summary,
+        exports,
     }))
 }
 
@@ -117,7 +166,7 @@ fn escape_embedded_json(bytes: &[u8]) -> Result<String, Box<dyn std::error::Erro
     Ok(escaped)
 }
 
-fn render(options: &Options) -> Result<PathBuf, Box<dyn std::error::Error>> {
+fn render(options: &Options) -> Result<ReportOutcome, Box<dyn std::error::Error>> {
     let (decoded, compressed) = profile_bytes(&options.input)?;
     let profile: Profile = serde_json::from_slice(&decoded)?;
     if profile.schema_version != 1 {
@@ -127,8 +176,26 @@ fn render(options: &Options) -> Result<PathBuf, Box<dyn std::error::Error>> {
         )
         .into());
     }
+    let baseline_bytes = options
+        .baseline
+        .as_ref()
+        .map(|path| profile_bytes(path))
+        .transpose()?;
+    let baseline_profile = if let Some((bytes, _)) = &baseline_bytes {
+        let baseline_profile: Profile = serde_json::from_slice(bytes)?;
+        if baseline_profile.schema_version != 1 {
+            return Err(format!(
+                "unsupported baseline schema_version {}; expected 1",
+                baseline_profile.schema_version
+            )
+            .into());
+        }
+        Some(baseline_profile)
+    } else {
+        None
+    };
     fs::create_dir_all(&options.output)?;
-    let (bootstrap, extra) = if decoded.len() <= options.inline_limit {
+    let (mut bootstrap, mut extra) = if decoded.len() <= options.inline_limit {
         let escaped = escape_embedded_json(&decoded)?;
         (
             serde_json::json!({"mode":"inline"}),
@@ -151,6 +218,28 @@ fn render(options: &Options) -> Result<PathBuf, Box<dyn std::error::Error>> {
             String::new(),
         )
     };
+    if let Some((baseline_bytes, baseline_compressed)) = baseline_bytes {
+        if baseline_bytes.len() <= options.inline_limit {
+            let escaped = escape_embedded_json(&baseline_bytes)?;
+            bootstrap["baseline_mode"] = "inline".into();
+            extra.push_str(&format!(
+                "\n<script id=\"spanscope-baseline\" type=\"application/json\">{escaped}</script>"
+            ));
+        } else {
+            let name = if baseline_compressed {
+                "baseline.json.gz"
+            } else {
+                "baseline.json"
+            };
+            let destination = options.output.join(name);
+            let source = options.baseline.as_ref().expect("baseline path is present");
+            if fs::canonicalize(source).ok() != fs::canonicalize(&destination).ok() {
+                fs::copy(source, &destination)?;
+            }
+            bootstrap["baseline_mode"] = "picker".into();
+            bootstrap["baseline_suggested"] = name.into();
+        }
+    }
     if !TEMPLATE.contains("__SPANSCOPE_BOOTSTRAP__") || !TEMPLATE.contains("</body>") {
         return Err("packaged viewer template is invalid".into());
     }
@@ -160,10 +249,26 @@ fn render(options: &Options) -> Result<PathBuf, Box<dyn std::error::Error>> {
         .replace("</body>", &format!("{extra}\n</body>"));
     let path = options.output.join("index.html");
     fs::write(&path, html)?;
+    let violations = baseline_profile
+        .as_ref()
+        .map(|baseline| compare::evaluate(baseline, &profile, &options.fail_if))
+        .unwrap_or_default();
+    if let (Some(summary), Some(baseline)) = (&options.summary, &options.baseline) {
+        let contents = compare::markdown(
+            &baseline.to_string_lossy(),
+            &options.input.to_string_lossy(),
+            &options.fail_if,
+            &violations,
+        );
+        fs::write(summary, contents)?;
+    }
+    for spec in &options.exports {
+        interop::write(&profile, spec)?;
+    }
     if options.open {
         open_browser(&path)?;
     }
-    Ok(path)
+    Ok(ReportOutcome { path, violations })
 }
 
 fn open_browser(path: &Path) -> Result<(), Box<dyn std::error::Error>> {
@@ -189,9 +294,28 @@ fn main() -> ExitCode {
             .map_err(|error| error.to_string()),
         None => Ok(None),
     }) {
-        Ok(Some(path)) => {
-            println!("{}", path.display());
-            ExitCode::SUCCESS
+        Ok(Some(outcome)) => {
+            println!("{}", outcome.path.display());
+            if outcome.violations.is_empty() {
+                ExitCode::SUCCESS
+            } else {
+                eprintln!(
+                    "cargo-spanscope: regression gate failed with {} violation(s)",
+                    outcome.violations.len()
+                );
+                for violation in outcome.violations.iter().take(10) {
+                    eprintln!(
+                        "  {} {}: {} -> {} ({:+.2}%, limit +{:.2}%)",
+                        violation.metric.name(),
+                        violation.routine,
+                        violation.baseline,
+                        violation.candidate,
+                        violation.delta_percent(),
+                        violation.threshold_percent,
+                    );
+                }
+                ExitCode::FAILURE
+            }
         }
         Ok(None) => ExitCode::SUCCESS,
         Err(error) => {

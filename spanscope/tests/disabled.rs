@@ -30,6 +30,20 @@ fn disabled_manual_macros_do_not_evaluate_arguments() {
             42
         }
     );
+    spanscope::attribute!(
+        {
+            calls.set(calls.get() + 1);
+            "attribute"
+        },
+        {
+            calls.set(calls.get() + 1);
+            "value"
+        }
+    );
+    spanscope::outcome!({
+        calls.set(calls.get() + 1);
+        "ok"
+    });
     assert_eq!(calls.get(), 0);
 }
 

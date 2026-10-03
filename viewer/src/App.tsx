@@ -10,11 +10,17 @@ import ProfileWorker from './worker?worker&inline';
 import { asNumber, buildFlame, exactJson, filterChains, formatInteger, formatNs, type ExactChain, type ProfileIndex } from './core';
 import { useProfile, type View } from './store';
 import { DependenciesView, RoutinesView, RunsView } from './AnalysisViews';
+import { CompareView } from './CompareView';
+import { InsightsView } from './InsightsView';
+import { TimelineView } from './TimelineView';
 
 echarts.use([BarChart, GridComponent, TooltipComponent, CanvasRenderer]);
 
 const NAV: { id: View; label: string; icon: string }[] = [
   { id: 'overview', label: 'Overview', icon: '◫' },
+  { id: 'compare', label: 'Compare', icon: '±' },
+  { id: 'insights', label: 'Insights', icon: '◇' },
+  { id: 'timeline', label: 'Timeline', icon: '↦' },
   { id: 'routines', label: 'Routines', icon: '◉' },
   { id: 'runs', label: 'Runs & metrics', icon: '▦' },
   { id: 'dependencies', label: 'Dependencies', icon: '⌁' },
@@ -23,50 +29,47 @@ const NAV: { id: View; label: string; icon: string }[] = [
   { id: 'raw', label: 'Raw explorer', icon: '{}' },
 ];
 
-function readBootstrap(): { mode: string; suggested?: string } {
+function readBootstrap(): { mode: string; suggested?: string; baseline_mode?: string; baseline_suggested?: string } {
   const text = document.getElementById('spanscope-bootstrap')?.textContent ?? '{}';
   try { return JSON.parse(text); } catch { return { mode: 'empty' }; }
 }
 const bootstrap = readBootstrap();
-
-async function readProfileFile(file: File): Promise<string> {
-  const magic = new Uint8Array(await file.slice(0, 2).arrayBuffer());
-  if (magic[0] === 0x1f && magic[1] === 0x8b) {
-    if (typeof DecompressionStream === 'undefined') throw new Error('This browser cannot decompress gzip files.');
-    return new Response(file.stream().pipeThrough(new DecompressionStream('gzip'))).text();
-  }
-  return file.text();
-}
 
 function useLoader() {
   const [error, setError] = useState('');
   const [progress, setProgress] = useState<number | null>(null);
   const workerRef = useRef<Worker | null>(null);
   const requestRef = useRef(0);
+  const pending = useRef(new Map<number, { target: 'candidate' | 'baseline'; name: string }>());
+  const latest = useRef({ candidate: 0, baseline: 0 });
   const setIndex = useProfile(state => state.setIndex);
+  const setBaseline = useProfile(state => state.setBaseline);
   useEffect(() => {
     const worker = new ProfileWorker();
     workerRef.current = worker;
     worker.onmessage = (event: MessageEvent<{ id: number; type: string; value?: number; index?: ProfileIndex; message?: string }>) => {
-      if (event.data.id !== requestRef.current) return;
+      const request = pending.current.get(event.data.id);
+      if (!request || latest.current[request.target] !== event.data.id) return;
       if (event.data.type === 'progress') setProgress(event.data.value ?? 0);
-      else if (event.data.type === 'ready' && event.data.index) { setIndex(event.data.index, pendingName.current); setProgress(null); setError(''); }
+      else if (event.data.type === 'ready' && event.data.index) {
+        if (request.target === 'candidate') setIndex(event.data.index, request.name);
+        else setBaseline(event.data.index, request.name);
+        pending.current.delete(event.data.id); setProgress(null); setError('');
+      }
       else if (event.data.type === 'error') { setError(event.data.message ?? 'Could not read profile.'); setProgress(null); }
     };
     const inline = document.getElementById('spanscope-profile')?.textContent;
-    if (inline) { requestRef.current += 1; pendingName.current = 'Embedded profile'; worker.postMessage({ id: requestRef.current, text: inline }); setProgress(0); }
+    if (inline) { const id = ++requestRef.current; latest.current.candidate = id; pending.current.set(id, { target: 'candidate', name: 'Candidate profile' }); worker.postMessage({ id, text: inline }); setProgress(0); }
+    const baseline = document.getElementById('spanscope-baseline')?.textContent;
+    if (baseline) { const id = ++requestRef.current; latest.current.baseline = id; pending.current.set(id, { target: 'baseline', name: 'Baseline profile' }); worker.postMessage({ id, text: baseline }); setProgress(0); }
     return () => { worker.terminate(); workerRef.current = null; };
-  }, [setIndex]);
-  const pendingName = useRef('');
-  const load = useCallback(async (file: File) => {
+  }, [setBaseline, setIndex]);
+  const load = useCallback((file: File, target: 'candidate' | 'baseline' = 'candidate') => {
     const id = ++requestRef.current;
-    pendingName.current = file.name;
+    latest.current[target] = id;
+    pending.current.set(id, { target, name: file.name });
     setError(''); setProgress(0);
-    try {
-      const text = await readProfileFile(file);
-      if (id !== requestRef.current) return;
-      workerRef.current?.postMessage({ id, text });
-    } catch (failure) { setError(failure instanceof Error ? failure.message : String(failure)); setProgress(null); }
+    workerRef.current?.postMessage({ id, file });
   }, []);
   return { load, error, progress };
 }
@@ -75,7 +78,7 @@ function IconButton({ children, label, onClick }: { children: React.ReactNode; l
   return <button className="icon-button" aria-label={label} title={label} onClick={onClick}>{children}</button>;
 }
 
-function TopBar({ onOpen, onCommands }: { onOpen: () => void; onCommands: () => void }) {
+function TopBar({ onOpen, onCommands, onFollow, following }: { onOpen: () => void; onCommands: () => void; onFollow?: () => void; following: boolean }) {
   const filename = useProfile(s => s.filename);
   const index = useProfile(s => s.index);
   const theme = useProfile(s => s.theme);
@@ -83,7 +86,7 @@ function TopBar({ onOpen, onCommands }: { onOpen: () => void; onCommands: () => 
   return <header className="topbar">
     <div className="brand"><span className="brand-mark">▤</span><span>span<span className="brand-accent">scope</span></span><span className="brand-badge">BETA</span></div>
     <div className="topbar-file"><span className="live-dot" />{index ? <><span className="truncate">{filename}</span><span className="file-caption">schema v{index.profile.schema_version}</span></> : 'No profile loaded'}</div>
-    <div className="topbar-actions"><IconButton label="Open profile" onClick={onOpen}>↥</IconButton><IconButton label="Toggle theme" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>{theme === 'dark' ? '☼' : '☾'}</IconButton><button className="command-trigger" onClick={onCommands}><span>⌕</span> Command <kbd>⌘ K</kbd></button></div>
+    <div className="topbar-actions"><IconButton label="Open profile" onClick={onOpen}>↥</IconButton>{onFollow && <button className={`live-follow ${following ? 'active' : ''}`} onClick={onFollow} title="Watch a profile file and reload it when it changes"><span />{following ? 'Following' : 'Live follow'}</button>}<IconButton label="Toggle theme" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>{theme === 'dark' ? '☼' : '☾'}</IconButton><button className="command-trigger" onClick={onCommands}><span>⌕</span> Command <kbd>⌘ K</kbd></button></div>
   </header>;
 }
 
@@ -135,7 +138,7 @@ function Overview({ index, chains }: { index: ProfileIndex; chains: ExactChain[]
   const capture = index.profile.meta.capture;
   const selectRoot = useProfile(s => s.selectRoot);
   const setView = useProfile(s => s.setView);
-  return <div className="panel-stack"><div className="stats-grid"><StatCard label="Capture duration" value={formatNs(index.profile.meta.duration_ns)} detail={index.profile.meta.started_at} accent /><StatCard label="Observed calls" value={formatInteger(index.totalCalls)} detail={`${index.profile.chains.length} unique chains`} /><StatCard label="Active self time" value={formatNs(index.totalSelfNs)} detail="Across all chains" /><StatCard label="Root runs" value={formatInteger(index.profile.roots.length)} detail={`${index.profile.threads.length} participating threads`} /></div><div className="quick-paths"><button onClick={() => setView('routines')}><strong>Which routine costs most?</strong><span>Calls, self weight, callers and children →</span></button><button onClick={() => setView('runs')}><strong>What happened in one run?</strong><span>Per-run composition and metrics →</span></button><button onClick={() => setView('dependencies')}><strong>Who calls whom?</strong><span>Interactive graph and direct edges →</span></button></div><div className="overview-grid"><section className="panel chart-panel"><div className="panel-heading"><div><div className="eyebrow">HOT PATHS</div><h2>Where time accumulates</h2></div><span className="subtle">Exclusive active time</span></div>{chains.length ? <OverviewChart index={index} chains={chains} /> : <div className="no-results">No chains match the current filters.</div>}</section><section className="panel health-panel"><div className="panel-heading"><div><div className="eyebrow">CAPTURE QUALITY</div><h2>What was observed</h2></div></div><div className="health-row"><span>Snapshot</span><strong className={capture.snapshot_complete ? 'good' : 'warn'}>{capture.snapshot_complete ? 'Complete' : 'Pending threads'}</strong></div><div className="health-row"><span>Sampling rate</span><strong>{Math.round(asNumber(capture.sample_rate) * 100)}%</strong></div><div className="health-row"><span>Sampled out</span><strong>{formatInteger(capture.sampled_out_roots)}</strong></div><div className="health-row"><span>Dropped records</span><strong>{formatInteger(capture.dropped_records)}</strong></div><div className="health-row"><span>Evicted roots</span><strong>{formatInteger(capture.evicted_roots)}</strong></div><p className="panel-note">Wall times can overlap across threads. Root interval evidence is {index.profile.roots.some(root => root.execution.status === 'truncated') ? 'partially truncated' : 'partial'}; exact causal paths are unavailable.</p></section></div><section className="panel roots-panel"><div className="panel-heading"><div><div className="eyebrow">RUNS</div><h2>Recent roots</h2></div><span className="subtle">{index.profile.roots.length} retained</span></div><div className="root-list">{index.profile.roots.slice(-8).reverse().map(root => <button key={root.uid} className="root-row" onClick={() => { selectRoot(root.uid); setView('runs'); }}><span className="root-icon">◇</span><span className="root-name">{index.spans.get(asNumber(root.span))?.name ?? root.span}<small>{root.uid}</small></span><span className={`root-status ${root.completion}`}>{root.completion}</span><strong>{formatNs(root.duration_ns)}</strong><span className="root-arrow">↗</span></button>)}</div></section></div>;
+  return <div className="panel-stack"><div className="stats-grid"><StatCard label="Capture duration" value={formatNs(index.profile.meta.duration_ns)} detail={index.profile.meta.started_at} accent /><StatCard label="Observed calls" value={formatInteger(index.totalCalls)} detail={`${index.profile.chains.length} unique chains`} /><StatCard label="Active self time" value={formatNs(index.totalSelfNs)} detail="Across all chains" /><StatCard label="Root runs" value={formatInteger(index.profile.roots.length)} detail={`${index.profile.threads.length} participating threads`} /></div><div className="quick-paths"><button onClick={() => setView('insights')}><strong>What deserves attention?</strong><span>{index.profile.analysis.insights.length} deterministic insights →</span></button><button onClick={() => setView('routines')}><strong>Which routine costs most?</strong><span>Calls, self weight, callers and children →</span></button><button onClick={() => setView('runs')}><strong>What happened in one run?</strong><span>Per-run composition and metrics →</span></button><button onClick={() => setView('dependencies')}><strong>Who calls whom?</strong><span>Interactive graph and direct edges →</span></button></div><div className="overview-grid"><section className="panel chart-panel"><div className="panel-heading"><div><div className="eyebrow">HOT PATHS</div><h2>Where time accumulates</h2></div><span className="subtle">Exclusive active time</span></div>{chains.length ? <OverviewChart index={index} chains={chains} /> : <div className="no-results">No chains match the current filters.</div>}</section><section className="panel health-panel"><div className="panel-heading"><div><div className="eyebrow">CAPTURE QUALITY</div><h2>What was observed</h2></div></div><div className="health-row"><span>Snapshot</span><strong className={capture.snapshot_complete ? 'good' : 'warn'}>{capture.snapshot_complete ? 'Complete' : 'Pending threads'}</strong></div><div className="health-row"><span>Sampling rate</span><strong>{Math.round(asNumber(capture.sample_rate) * 100)}%</strong></div><div className="health-row"><span>Sampled out</span><strong>{formatInteger(capture.sampled_out_roots)}</strong></div><div className="health-row"><span>Dropped records</span><strong>{formatInteger(capture.dropped_records)}</strong></div><div className="health-row"><span>Evicted roots</span><strong>{formatInteger(capture.evicted_roots)}</strong></div><p className="panel-note">Wall times can overlap across threads. Evidence can be partial or truncated; Timeline derives a causal path only from explicit segment dependencies.</p></section></div><section className="panel roots-panel"><div className="panel-heading"><div><div className="eyebrow">RUNS</div><h2>Recent roots</h2></div><span className="subtle">{index.profile.roots.length} retained</span></div><div className="root-list">{index.profile.roots.slice(-8).reverse().map(root => <button key={root.uid} className="root-row" onClick={() => { selectRoot(root.uid); setView('runs'); }}><span className="root-icon">◇</span><span className="root-name">{index.spans.get(asNumber(root.span))?.name ?? root.span}<small>{root.uid}</small></span><span className={`root-status ${root.completion}`}>{root.completion}</span><strong>{formatNs(root.duration_ns)}</strong><span className="root-arrow">↗</span></button>)}</div></section></div>;
 }
 
 interface FlameRect { x: number; y: number; width: number; height: number; spanId: number; key: string; }
@@ -224,16 +227,56 @@ function CommandPalette({ open, setOpen, onOpen }: { open: boolean; setOpen: (va
 
 export default function App() {
   const fileInput = useRef<HTMLInputElement>(null);
+  const baselineInput = useRef<HTMLInputElement>(null);
   const [commands, setCommands] = useState(false);
+  const [following, setFollowing] = useState(false);
+  const followTimer = useRef<number | null>(null);
   const { load, error, progress } = useLoader();
   const index = useProfile(s => s.index);
+  const filename = useProfile(s => s.filename);
+  const baselineIndex = useProfile(s => s.baselineIndex);
+  const baselineFilename = useProfile(s => s.baselineFilename);
   const view = useProfile(s => s.view);
   const query = useProfile(s => s.query);
   const spanId = useProfile(s => s.spanId);
   const rootUid = useProfile(s => s.rootUid);
   const chains = useMemo(() => index ? filterChains(index, { query, spanId, rootUid }) : [], [index, query, spanId, rootUid]);
   const open = useCallback(() => fileInput.current?.click(), []);
+  const openBaseline = useCallback(() => baselineInput.current?.click(), []);
+  const stopFollowing = useCallback(() => {
+    if (followTimer.current !== null) window.clearInterval(followTimer.current);
+    followTimer.current = null;
+    setFollowing(false);
+  }, []);
+  const filePicker = (window as Window & { showOpenFilePicker?: (options?: unknown) => Promise<FileSystemFileHandle[]> }).showOpenFilePicker;
+  const follow = useCallback(async () => {
+    if (following) { stopFollowing(); return; }
+    if (!filePicker) return;
+    try {
+      const [handle] = await filePicker({ multiple: false, types: [{ description: 'spanscope profile', accept: { 'application/json': ['.json'], 'application/gzip': ['.gz'] } }] });
+      if (!handle) return;
+      let current = await handle.getFile();
+      let signature = `${current.size}:${current.lastModified}`;
+      load(current, 'candidate');
+      setFollowing(true);
+      let checking = false;
+      followTimer.current = window.setInterval(async () => {
+        if (checking) return;
+        checking = true;
+        try {
+          current = await handle.getFile();
+          const next = `${current.size}:${current.lastModified}`;
+          if (next !== signature) { signature = next; load(current, 'candidate'); }
+        } catch { stopFollowing(); }
+        finally { checking = false; }
+      }, 1500);
+    } catch (failure) {
+      if (failure instanceof DOMException && failure.name === 'AbortError') return;
+      stopFollowing();
+    }
+  }, [filePicker, following, load, stopFollowing]);
+  useEffect(() => stopFollowing, [stopFollowing]);
   useEffect(() => { const keydown = (event: KeyboardEvent) => { if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') { event.preventDefault(); setCommands(value => !value); } }; window.addEventListener('keydown', keydown); return () => window.removeEventListener('keydown', keydown); }, []);
   useEffect(() => { const drag = (event: DragEvent) => event.preventDefault(); const drop = (event: DragEvent) => { event.preventDefault(); const file = event.dataTransfer?.files[0]; if (file) void load(file); }; window.addEventListener('dragover', drag); window.addEventListener('drop', drop); return () => { window.removeEventListener('dragover', drag); window.removeEventListener('drop', drop); }; }, [load]);
-  return <div className="app-shell"><TopBar onOpen={open} onCommands={() => setCommands(true)} /><div className="shell-body"><Sidebar /><main className="main-content">{!index ? <EmptyState onOpen={open} error={error} progress={progress} /> : <><div className="page-header"><div><div className="eyebrow">EXECUTION PROFILE / {view.toUpperCase()}</div><h1>{NAV.find(item => item.id === view)?.label}</h1><p>{index.profile.meta.program} · {index.profile.meta.started_at}</p></div><button className="outline-button" onClick={open}>↥ &nbsp; New profile</button></div><FilterBar index={index} />{error && <div className="error-box" role="alert">{error}</div>}{progress !== null && <div className="progress"><div style={{ width: `${progress * 100}%` }} /></div>}{view === 'overview' && <Overview index={index} chains={chains} />}{view === 'routines' && <RoutinesView index={index} rootUid={rootUid} query={query} />}{view === 'runs' && <RunsView index={index} rootUid={rootUid} />}{view === 'dependencies' && <DependenciesView index={index} rootUid={rootUid} />}{view === 'flame' && <Flame index={index} chains={chains} />}{view === 'chains' && <ChainsTable index={index} chains={chains} />}{view === 'raw' && <RawExplorer index={index} />}</>}</main></div><input ref={fileInput} hidden type="file" accept=".json,.gz,.json.gz,application/json,application/gzip" onChange={event => { const file = event.target.files?.[0]; if (file) void load(file); event.currentTarget.value = ''; }} /><CommandPalette open={commands} setOpen={setCommands} onOpen={open} /></div>;
+  return <div className="app-shell"><TopBar onOpen={open} onCommands={() => setCommands(true)} onFollow={filePicker ? () => void follow() : undefined} following={following} /><div className="shell-body"><Sidebar /><main className="main-content">{!index ? <EmptyState onOpen={open} error={error} progress={progress} /> : <><div className="page-header"><div><div className="eyebrow">EXECUTION PROFILE / {view.toUpperCase()}</div><h1>{NAV.find(item => item.id === view)?.label}</h1><p>{index.profile.meta.program} · {index.profile.meta.started_at}</p></div><button className="outline-button" onClick={open}>↥ &nbsp; New profile</button></div>{view !== 'compare' && view !== 'insights' && view !== 'timeline' && <FilterBar index={index} />}{error && <div className="error-box" role="alert">{error}</div>}{progress !== null && <div className="progress"><div style={{ width: `${progress * 100}%` }} /></div>}{view === 'overview' && <Overview index={index} chains={chains} />}{view === 'compare' && <CompareView baseline={baselineIndex} candidate={index} baselineName={baselineFilename} candidateName={filename} onOpenBaseline={openBaseline} />}{view === 'insights' && <InsightsView index={index} />}{view === 'timeline' && <TimelineView index={index} rootUid={rootUid} />}{view === 'routines' && <RoutinesView index={index} rootUid={rootUid} query={query} />}{view === 'runs' && <RunsView index={index} rootUid={rootUid} />}{view === 'dependencies' && <DependenciesView index={index} rootUid={rootUid} />}{view === 'flame' && <Flame index={index} chains={chains} />}{view === 'chains' && <ChainsTable index={index} chains={chains} />}{view === 'raw' && <RawExplorer index={index} />}</>}</main></div><input ref={fileInput} hidden type="file" accept=".json,.gz,.json.gz,application/json,application/gzip" onChange={event => { const file = event.target.files?.[0]; if (file) { stopFollowing(); load(file, 'candidate'); } event.currentTarget.value = ''; }} /><input ref={baselineInput} hidden type="file" accept=".json,.gz,.json.gz,application/json,application/gzip" onChange={event => { const file = event.target.files?.[0]; if (file) load(file, 'baseline'); event.currentTarget.value = ''; }} /><CommandPalette open={commands} setOpen={setCommands} onOpen={open} /></div>;
 }

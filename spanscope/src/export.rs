@@ -366,6 +366,8 @@ impl<'a> ExportView<'a> {
             rss_entry_kb: root.rss_entry_kb,
             rss_exit_kb: root.rss_exit_kb,
             metrics: root.metrics.clone(),
+            attributes: root.attributes.clone(),
+            outcome: root.outcome.clone(),
             chains,
             chain_self_ns,
             completion: if root.cancelled {
@@ -476,11 +478,7 @@ impl Serialize for ExportView<'_> {
         output.serialize_field("threads", &threads)?;
         output.serialize_field(
             "analysis",
-            &profile::Analysis {
-                status: profile::AnalysisStatus::Skipped,
-                insights: Vec::new(),
-                sections: BTreeMap::new(),
-            },
+            &crate::analysis::analyze(&self.spans, &self.chains, &self.graph),
         )?;
         output.end()
     }

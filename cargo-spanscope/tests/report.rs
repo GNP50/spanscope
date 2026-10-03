@@ -117,3 +117,140 @@ fn unsupported_schema_fails_before_output() {
     assert!(!report.join("index.html").exists());
     fs::remove_dir_all(dir).unwrap();
 }
+
+#[test]
+fn embeds_candidate_and_baseline_for_offline_comparison() {
+    let dir = workdir();
+    let report = dir.join("report");
+    let fixture = fixture();
+    let output = run(&[
+        fixture.to_str().unwrap(),
+        "--baseline",
+        fixture.to_str().unwrap(),
+        "--output",
+        report.to_str().unwrap(),
+        "--no-open",
+    ]);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let html = fs::read_to_string(report.join("index.html")).unwrap();
+    assert!(html.contains("id=\"spanscope-profile\""));
+    assert!(html.contains("id=\"spanscope-baseline\""));
+    assert!(html.contains("\"baseline_mode\":\"inline\""));
+    fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn regression_gate_writes_markdown_and_keeps_the_report() {
+    let dir = workdir();
+    let baseline = fixture();
+    let mut candidate: Value = serde_json::from_slice(&fs::read(&baseline).unwrap()).unwrap();
+    let original = candidate["chains"][1]["self_ns"].as_u64().unwrap();
+    candidate["chains"][1]["self_ns"] = (original * 2).into();
+    let candidate_path = dir.join("candidate.json");
+    fs::write(&candidate_path, serde_json::to_vec(&candidate).unwrap()).unwrap();
+    let report = dir.join("report");
+    let summary = dir.join("summary.md");
+    let output = run(&[
+        candidate_path.to_str().unwrap(),
+        "--baseline",
+        baseline.to_str().unwrap(),
+        "--fail-if",
+        "self:+10%",
+        "--summary",
+        summary.to_str().unwrap(),
+        "--output",
+        report.to_str().unwrap(),
+        "--no-open",
+    ]);
+    assert!(!output.status.success());
+    assert!(report.join("index.html").exists());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("regression gate failed"));
+    let markdown = fs::read_to_string(summary).unwrap();
+    assert!(markdown.contains("**Result: FAIL**"));
+    assert!(markdown.contains("demo::transform"));
+    assert!(markdown.contains("self:+10%"));
+
+    let passing = run(&[
+        candidate_path.to_str().unwrap(),
+        "--baseline",
+        baseline.to_str().unwrap(),
+        "--fail-if",
+        "self:+200%",
+        "--output",
+        dir.join("passing").to_str().unwrap(),
+        "--no-open",
+    ]);
+    assert!(
+        passing.status.success(),
+        "{}",
+        String::from_utf8_lossy(&passing.stderr)
+    );
+    fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn regression_options_require_a_baseline_and_valid_rule() {
+    let dir = workdir();
+    let fixture = fixture();
+    let without_baseline = run(&[
+        fixture.to_str().unwrap(),
+        "--fail-if",
+        "p99:+10%",
+        "--output",
+        dir.to_str().unwrap(),
+    ]);
+    assert!(!without_baseline.status.success());
+    assert!(String::from_utf8_lossy(&without_baseline.stderr).contains("require --baseline"));
+    let invalid = run(&[
+        fixture.to_str().unwrap(),
+        "--baseline",
+        fixture.to_str().unwrap(),
+        "--fail-if",
+        "mean:+10%",
+    ]);
+    assert!(!invalid.status.success());
+    assert!(String::from_utf8_lossy(&invalid.stderr).contains("unknown comparison metric"));
+    fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn writes_chrome_and_speedscope_exports() {
+    let dir = workdir();
+    let fixture = fixture();
+    let chrome = dir.join("exports/trace.json");
+    let speedscope = dir.join("exports/profile.speedscope.json");
+    let output = run(&[
+        fixture.to_str().unwrap(),
+        "--export",
+        &format!("chrome:{}", chrome.display()),
+        "--export",
+        &format!("speedscope:{}", speedscope.display()),
+        "--output",
+        dir.join("report").to_str().unwrap(),
+        "--no-open",
+    ]);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let chrome: Value = serde_json::from_slice(&fs::read(chrome).unwrap()).unwrap();
+    assert!(chrome["traceEvents"].as_array().unwrap().len() > 1);
+    assert_eq!(chrome["traceEvents"][1]["ph"], "X");
+
+    let speedscope: Value = serde_json::from_slice(&fs::read(speedscope).unwrap()).unwrap();
+    assert_eq!(
+        speedscope["$schema"],
+        "https://www.speedscope.app/file-format-schema.json"
+    );
+    assert!(!speedscope["profiles"][0]["samples"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+    fs::remove_dir_all(dir).unwrap();
+}

@@ -5,14 +5,16 @@ use flate2::read::GzDecoder;
 use spanscope::collection::snapshot;
 use spanscope::config::{ConfigBuilder, OutputFormat};
 use spanscope::export::{flush, write_snapshot};
-use spanscope::profile::{EvidenceStatus, Profile};
+use spanscope::profile::{AnalysisStatus, EvidenceStatus, Profile};
 use std::io::Read;
 use std::path::PathBuf;
 use std::process::Command;
 
 #[spanscope::trace(root)]
 fn root() {
+    spanscope::attribute!("test.case", "roundtrip");
     child();
+    spanscope::outcome!("ok");
 }
 
 #[spanscope::trace(tags("leaf", "leaf"))]
@@ -51,6 +53,24 @@ fn json_gzip_text_roundtrip_and_repeat() {
         .roots
         .iter()
         .all(|root| root.execution.status != EvidenceStatus::Complete));
+    assert_eq!(first_profile.analysis.status, AnalysisStatus::Complete);
+    assert!(!first_profile.analysis.insights.is_empty());
+    assert!(first_profile.analysis.insights.iter().all(|insight| {
+        insight
+            .evidence
+            .spans
+            .iter()
+            .all(|id| first_profile.spans.iter().any(|span| span.id == *id))
+            && insight
+                .evidence
+                .chains
+                .iter()
+                .all(|id| first_profile.chains.iter().any(|chain| chain.id == *id))
+    }));
+    assert!(first_profile.roots.iter().all(|root| {
+        root.attributes.get("test.case").map(String::as_str) == Some("roundtrip")
+            && root.outcome.as_deref() == Some("ok")
+    }));
     assert!(first_profile.chains.iter().all(|chain| chain
         .histogram
         .buckets

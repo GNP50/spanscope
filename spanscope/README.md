@@ -1,10 +1,16 @@
 # spanscope
 
 Runtime facade, collector, and profile schema v1. Default features leave
-tracing disabled. With `enabled`, `#[trace]`, `span!` and `metric!` collect
+tracing disabled. With `enabled`, `#[trace]`, `span!`, `metric!`, `attribute!`,
+and `outcome!` collect
 synchronous and async call chains, bounded root snapshots and per-thread
 aggregates. Async bodies are traced only after their first poll; their context is
 installed for each poll and removed before suspension.
+
+`attribute!("request.kind", value)` attaches bounded string context to active
+roots and `outcome!("ok")` records the application-defined result. Each root
+keeps at most 64 attributes; values are truncated to 1024 UTF-8 bytes and the
+outcome to 128 bytes. Repeated keys keep their last value.
 
 `spanscope::context::propagate()` captures logical ancestry and root identity.
 Use `handle.attach()` in a synchronous worker scope or `handle.wrap(future)`
@@ -57,9 +63,12 @@ Stable descriptor and chain IDs are assigned at export time after sorting;
 root UUIDs and timings remain specific to each run. `snapshot_complete` reports
 thread acknowledgement, while active invocations are still excluded. Root
 interval evidence is `partial` or `truncated`: dependency edges are not yet
-captured, so exact concurrent critical paths cannot be inferred. Analysis is
-marked `skipped` until the analysis engine exists. The text report shows
-aggregate chains and capture quality.
+captured by this runtime, so exact concurrent critical paths cannot be inferred
+from a native capture. The viewer computes a bounded longest path when an
+imported schema-v1 profile contains explicit segments and dependencies. Export computes
+bounded deterministic diagnostics for self-time hotspots, long tails, high
+variance, cancellations, allocation concentration, and high call-graph fanout.
+The text report shows aggregate chains and capture quality.
 
 The `export_profile` example generates `viewer/fixtures/example.json`, which is
 validated against `schema/profile-v1.schema.json`. With the `viewer` feature,
@@ -72,7 +81,7 @@ development i7-7700, above the <50 ns goal; optimization remains open.
 
 Version 0.1.0 is an early release. Add
 `spanscope = { version = "0.1.0", features = ["enabled"] }` to instrument an
-application. Requires Rust 1.80 or later. Graph and ML analysis are not yet
-implemented; the `ml` feature is reserved for future work.
+application. Requires Rust 1.80 or later. Runtime causal-edge capture and ML
+analysis are not yet implemented; the `ml` feature is reserved for future work.
 
 Licensed under MIT OR Apache-2.0; both license texts are included in this package.

@@ -25,6 +25,8 @@ pub mod profile;
 #[cfg(feature = "alloc-tracker")]
 mod allocation;
 #[cfg(feature = "enabled")]
+mod analysis;
+#[cfg(feature = "enabled")]
 pub mod config;
 #[cfg(feature = "enabled")]
 pub mod export;
@@ -121,6 +123,46 @@ macro_rules! metric {
     }};
 }
 
+/// Records a bounded string attribute on every active root call.
+///
+/// In disabled mode neither argument is evaluated.
+#[cfg(feature = "enabled")]
+#[macro_export]
+macro_rules! attribute {
+    ($name:expr, $value:expr) => {{
+        $crate::__private::attribute($name, ($value).to_string())
+    }};
+}
+
+#[cfg(not(feature = "enabled"))]
+/// Records nothing when collection is disabled.
+#[macro_export]
+macro_rules! attribute {
+    ($name:expr, $value:expr) => {{
+        ()
+    }};
+}
+
+/// Sets an application-defined root result such as `ok`, `error`, or `timeout`.
+///
+/// In disabled mode the argument is not evaluated.
+#[cfg(feature = "enabled")]
+#[macro_export]
+macro_rules! outcome {
+    ($value:expr) => {{
+        $crate::__private::outcome(($value).to_string())
+    }};
+}
+
+#[cfg(not(feature = "enabled"))]
+/// Records nothing when collection is disabled.
+#[macro_export]
+macro_rules! outcome {
+    ($value:expr) => {{
+        ()
+    }};
+}
+
 #[cfg(not(feature = "enabled"))]
 /// Evaluates no arguments and records nothing when collection is disabled.
 #[macro_export]
@@ -134,5 +176,7 @@ macro_rules! metric {
 #[cfg(feature = "enabled")]
 #[doc(hidden)]
 pub mod __private {
-    pub use crate::runtime::{enter, metric, trace_future, SpanDescriptor, SpanGuard};
+    pub use crate::runtime::{
+        attribute, enter, metric, outcome, trace_future, SpanDescriptor, SpanGuard,
+    };
 }

@@ -8,6 +8,7 @@ import { pathToFileURL } from 'node:url';
 
 const root = resolve(import.meta.dirname, '../..');
 const fixture = resolve(root, 'viewer/fixtures/example.json');
+const causalFixture = resolve(root, 'spanscope/tests/fixtures/async-partial.json');
 const cli = resolve(root, 'target/debug/cargo-spanscope');
 function report(profile: string, ...args: string[]) {
   const dir = mkdtempSync(join(tmpdir(), 'spanscope-e2e-'));
@@ -49,7 +50,7 @@ test('picker accepts gzip over file:// without network', async ({ page }) => {
   await page.route(/^https?:\/\//, route => { requests.push(route.request().url()); return route.abort(); });
   await page.goto(report(gzip, '--inline-limit-mib', '0'));
   await expect(page.getByText('Large profile ready nearby:')).toBeVisible();
-  await page.locator('input[type=file]').setInputFiles(gzip);
+  await page.locator('input[type=file]').first().setInputFiles(gzip);
   await expect(page.getByRole('heading', { name: 'Overview' })).toBeVisible();
   await expect(page.getByText('Recent roots')).toBeVisible();
   expect(requests).toEqual([]);
@@ -62,12 +63,15 @@ test('routine cost, per-run counts, metrics and call dependencies are linked', a
   await expect(page.getByRole('heading', { name: 'Every observed routine' })).toBeVisible();
   await page.locator('.routine-row').filter({ hasText: 'demo::transform' }).click();
   await expect(page.locator('.detail-stats')).toContainText('880');
+  await expect(page.getByRole('button', { name: /export_profile.rs.*Copy/ })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Called by' })).toBeVisible();
   await expect(page.locator('.relation-panel').first()).toContainText('demo::workload');
   await expect(page.getByRole('heading', { name: 'Calls in each retained run' })).toBeVisible();
   await page.getByRole('button', { name: 'Runs & metrics' }).click();
   await expect(page.getByRole('heading', { name: 'Routine composition' })).toBeVisible();
   await expect(page.getByRole('img', { name: 'input_size across retained runs' })).toBeVisible();
+  await expect(page.getByText('workload.class')).toBeVisible();
+  await expect(page.locator('.run-outcome')).toContainText('ok');
   await page.locator('.run-picker button').first().click();
   await expect(page).toHaveURL(/root=/);
   await expect(page.locator('.composition-list')).toContainText('200 calls');
@@ -76,6 +80,35 @@ test('routine cost, per-run counts, metrics and call dependencies are linked', a
   await expect(page.locator('.edge-list')).toContainText('200 calls');
   await expect(page.getByRole('heading', { name: 'Segment dependencies' })).toBeVisible();
   await expect(page.getByText('This run has no explicit segment dependencies.')).toBeVisible();
+});
+
+test('timeline shows retained intervals and refuses to infer a missing critical path', async ({ page }) => {
+  await page.route(/^https?:\/\//, route => route.abort());
+  await page.goto(report(fixture));
+  await page.getByRole('button', { name: 'Timeline' }).click();
+  await expect(page.getByRole('heading', { name: 'Invocation timeline' })).toBeVisible();
+  await expect(page.locator('.timeline-interval').first()).toBeVisible();
+  await expect(page.getByText(/No explicit segment DAG is available/)).toBeVisible();
+});
+
+test('timeline computes a bounded critical path from explicit causal evidence', async ({ page }) => {
+  await page.goto(report(causalFixture));
+  await page.getByRole('button', { name: 'Timeline' }).click();
+  await expect(page.getByRole('heading', { name: 'Longest observed dependency path' })).toBeVisible();
+  await expect(page.locator('.critical-list > div')).toHaveCount(2);
+  await expect(page.getByText('20 ns', { exact: true }).first()).toBeVisible();
+  await expect(page.getByText('Evidence is partial')).toBeVisible();
+});
+
+test('deterministic insight links its evidence to the routine view', async ({ page }) => {
+  await page.route(/^https?:\/\//, route => route.abort());
+  await page.goto(report(fixture));
+  await page.getByRole('button', { name: 'Insights' }).click();
+  await expect(page.getByRole('heading', { name: 'What deserves attention' })).toBeVisible();
+  await expect(page.locator('.insight-card')).toContainText('demo::workload concentrates active self time');
+  await page.locator('.insight-card').first().click();
+  await expect(page.getByRole('heading', { name: 'Routines', level: 1 })).toBeVisible();
+  await expect(page.locator('.routine-row.selected')).toContainText('demo::workload');
 });
 
 test('dragged JSON loads through the offline drop target', async ({ page }) => {
@@ -88,6 +121,18 @@ test('dragged JSON loads through the offline drop target', async ({ page }) => {
     window.dispatchEvent(new DragEvent('drop', { dataTransfer: transfer, bubbles: true, cancelable: true }));
   }, base64);
   await expect(page.getByRole('heading', { name: 'Overview' })).toBeVisible();
+});
+
+test('embedded baseline opens an offline routine comparison', async ({ page }) => {
+  const requests: string[] = [];
+  await page.route(/^https?:\/\//, route => { requests.push(route.request().url()); return route.abort(); });
+  await page.goto(report(fixture, '--baseline', fixture));
+  await expect(page.getByRole('heading', { name: 'Compare', level: 1 })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Baseline → candidate' })).toBeVisible();
+  await expect(page.locator('.compare-rows')).toContainText('demo::transform');
+  await expect(page.locator('.compare-rows')).toContainText('0.0%');
+  await expect(page.getByText('Potential regressions').locator('..')).toContainText('0');
+  expect(requests).toEqual([]);
 });
 
 test('hostile span text stays inert when embedded by the CLI', async ({ page }) => {
@@ -108,6 +153,6 @@ test('worker rejects a profile missing schema-required metadata', async ({ page 
   const input = join(dir, 'invalid.json');
   writeFileSync(input, JSON.stringify(invalid));
   await page.goto(report(fixture, '--inline-limit-mib', '0'));
-  await page.locator('input[type=file]').setInputFiles(input);
+  await page.locator('input[type=file]').first().setInputFiles(input);
   await expect(page.getByRole('alert')).toContainText('Schema v1 validation failed');
 });

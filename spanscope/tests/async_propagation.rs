@@ -128,6 +128,8 @@ fn propagation_root() {
         let _attached = parent.attach();
         sync_child();
         spanscope::metric!("workers", 1);
+        spanscope::attribute!("worker.kind", "thread");
+        spanscope::outcome!("joined");
     })
     .join()
     .unwrap();
@@ -143,6 +145,8 @@ fn propagated_thread_updates_only_its_root() {
         .find(|root| profile.spans[root.span as usize].name == "propagation_root")
         .unwrap();
     assert_eq!(root.metrics["workers"], 1.0);
+    assert_eq!(root.attributes["worker.kind"], "thread");
+    assert_eq!(root.outcome.as_deref(), Some("joined"));
     assert_eq!(root.chains.iter().map(|chain| chain.calls).sum::<u64>(), 2);
     assert!(!root.incomplete);
     assert!(profile.chains.iter().any(|chain| {

@@ -76,7 +76,7 @@
   },
   "definitions": {
     "Analysis": {
-      "description": "Analysis envelope; algorithm-specific sections are currently empty.",
+      "description": "Analysis envelope containing evidence-backed deterministic or optional results.",
       "type": "object",
       "required": [
         "insights",
@@ -965,6 +965,13 @@
         "uid"
       ],
       "properties": {
+        "attributes": {
+          "description": "Bounded string attributes recorded for grouping and filtering.",
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
         "chain_self_ns": {
           "description": "Root-local exclusive active time per chain, needed for root flame graphs.",
           "type": "object",
@@ -1029,6 +1036,13 @@
             "type": "number",
             "format": "double"
           }
+        },
+        "outcome": {
+          "description": "Optional application-defined result such as `ok`, `error`, or `timeout`.",
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "rss_entry_kb": {
           "description": "Linux resident set size at entry, in KiB; zero if unsupported.",

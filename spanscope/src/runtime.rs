@@ -184,6 +184,8 @@ struct RootRecord {
     start_ns: u64,
     duration_ns: u64,
     metrics: BTreeMap<String, f64>,
+    attributes: BTreeMap<String, String>,
+    outcome: Option<String>,
     chains: BTreeMap<Vec<u32>, RootChain>,
     cancelled: bool,
     incomplete: bool,
@@ -207,6 +209,8 @@ struct RootState {
     start_ns: u64,
     rss_entry_kb: u64,
     metrics: BTreeMap<String, f64>,
+    attributes: BTreeMap<String, String>,
+    outcome: Option<String>,
     chains: BTreeMap<Vec<u32>, RootChain>,
     attachments: u64,
     handles: u64,
@@ -230,6 +234,8 @@ fn new_root(span: u32, thread: u32, started: Instant) -> SharedRoot {
         start_ns: started.duration_since(registry.start).as_nanos() as u64,
         rss_entry_kb: rss_kb(),
         metrics: BTreeMap::new(),
+        attributes: BTreeMap::new(),
+        outcome: None,
         chains: BTreeMap::new(),
         attachments: 0,
         handles: 0,
@@ -252,6 +258,8 @@ fn finish_root(shared: &SharedRoot, duration_ns: u64, cancelled: bool) {
         start_ns: root.start_ns,
         duration_ns,
         metrics: root.metrics.clone(),
+        attributes: root.attributes.clone(),
+        outcome: root.outcome.clone(),
         chains: root.chains.clone(),
         cancelled,
         incomplete: root.attachments != 0 || root.handles != 0,
@@ -693,6 +701,51 @@ impl ThreadState {
             let mut root = lock(root);
             if !root.closed {
                 root.metrics.insert(name.to_owned(), value);
+            }
+        }
+    }
+
+    fn attribute(&mut self, name: &'static str, value: String) {
+        const MAX_ATTRIBUTES: usize = 64;
+        let context_roots = self
+            .contexts
+            .last()
+            .map(|context| context.context.roots.as_slice())
+            .unwrap_or(&[]);
+        for root in self
+            .active_roots
+            .iter()
+            .map(|root| &root.shared)
+            .chain(context_roots.iter())
+        {
+            let mut root = lock(root);
+            if root.closed {
+                continue;
+            }
+            if !root.attributes.contains_key(name) && root.attributes.len() >= MAX_ATTRIBUTES {
+                registry().dropped.fetch_add(1, Ordering::Relaxed);
+                continue;
+            }
+            root.attributes
+                .insert(name.to_owned(), truncate_utf8(value.clone(), 1_024));
+        }
+    }
+
+    fn outcome(&mut self, value: String) {
+        let context_roots = self
+            .contexts
+            .last()
+            .map(|context| context.context.roots.as_slice())
+            .unwrap_or(&[]);
+        for root in self
+            .active_roots
+            .iter()
+            .map(|root| &root.shared)
+            .chain(context_roots.iter())
+        {
+            let mut root = lock(root);
+            if !root.closed {
+                root.outcome = Some(truncate_utf8(value.clone(), 128));
             }
         }
     }
@@ -1272,6 +1325,28 @@ pub fn enter(descriptor: &'static SpanDescriptor, root: bool) -> SpanGuard {
     }
 }
 
+fn truncate_utf8(mut value: String, limit: usize) -> String {
+    if value.len() <= limit {
+        return value;
+    }
+    let mut end = limit;
+    while !value.is_char_boundary(end) {
+        end -= 1;
+    }
+    value.truncate(end);
+    value
+}
+
+/// Records a bounded string attribute on every active root invocation.
+pub fn attribute(name: &'static str, value: String) {
+    let _ = with_state(|state| state.attribute(name, value));
+}
+
+/// Sets the application-defined outcome on every active root invocation.
+pub fn outcome(value: String) {
+    let _ = with_state(|state| state.outcome(value));
+}
+
 /// Attaches one finite metric to active root calls on this thread.
 pub fn metric(name: &'static str, value: f64) {
     #[cfg(feature = "alloc-tracker")]
@@ -1369,6 +1444,10 @@ pub struct RootSnapshot {
     pub duration_ns: u64,
     /// Last finite value for each recorded metric key.
     pub metrics: BTreeMap<String, f64>,
+    /// Bounded application-defined string attributes.
+    pub attributes: BTreeMap<String, String>,
+    /// Optional application-defined result.
+    pub outcome: Option<String>,
     /// Per-chain observations within this root.
     pub chains: Vec<RootChainSnapshot>,
     /// Whether the invocation unwound.
@@ -1534,6 +1613,8 @@ fn snapshot_inner(publish_current: bool) -> Snapshot {
             start_ns: root.start_ns,
             duration_ns: root.duration_ns,
             metrics: root.metrics,
+            attributes: root.attributes,
+            outcome: root.outcome,
             chains: root
                 .chains
                 .into_iter()

@@ -1,8 +1,8 @@
 # spanscope
 
-`spanscope` instruments Rust functions and exports execution profiles that you can explore in a self-contained, offline HTML report. It records synchronous and async spans, call chains, root invocations, timings, and optional memory information. The repository contains the runtime crate, proc macro, report CLI, viewer source, and profile schema.
+`spanscope` instruments Rust functions and exports execution profiles that you can explore in a self-contained, offline HTML report. It records synchronous and async spans, call chains, root invocations, timings, optional memory information, and evidence-backed deterministic diagnostics. The repository contains the runtime crate, proc macro, report CLI, viewer source, and profile schema.
 
-Version 0.1.0 is an early release. The profiler and report CLI are usable; graph algorithms, ML analysis and large-profile streaming are still in development. Rust 1.80 or newer is required.
+Version 0.1.0 is an early release. The profiler and report CLI are usable; runtime causal-edge capture, ML analysis and fully streaming large-profile parsing are still in development. Rust 1.80 or newer is required.
 
 ## Try the report
 
@@ -14,11 +14,20 @@ cargo run -p spanscope --features enabled --example export_profile -- \
 cargo run -p cargo-spanscope -- profile.json --output report
 ```
 
-Open `report/index.html` directly in a modern browser. The example performs instrumented work and writes a real schema-v1 profile. The report works over `file://`; it does not need a web server or a network connection. Start with **Routines** to see observed call counts, exclusive active cost, inclusive wall sums, direct callers, callees and full paths. **Runs & metrics** breaks down one root invocation, lists its retained individual call intervals, and compares recorded metrics across runs. **Dependencies** draws the interactive caller graph and shows captured causal segment edges when available. The structural flame graph, sortable chains and raw records remain available. Filters and selections are linked across views and stored in the URL hash.
+Open `report/index.html` directly in a modern browser. The example performs instrumented work and writes a real schema-v1 profile. The report works over `file://`; it does not need a web server or a network connection. Start with **Insights** for evidence-backed diagnostics covering hotspots, tail latency, variance, cancellations, allocations, and graph fanout. **Routines** shows observed call counts, exclusive active cost, inclusive wall sums, direct callers, callees, full paths, and copyable source locations. **Compare** loads an earlier baseline and highlights self-time, p99, call-count, and allocation deltas. **Timeline** shows retained intervals by thread and computes a longest observed path only from explicit causal evidence. **Runs & metrics** breaks down one root invocation, including its attributes, outcome, individual call intervals, and metrics. **Dependencies** draws the interactive caller graph and shows captured causal segment edges when available. The structural flame graph, sortable chains and raw records remain available. Filters and selections are linked across views and stored in the URL hash.
 
 For a gzip profile, pass `profile.json.gz` instead. The CLI embeds profiles of up to 50 MiB uncompressed by default. For a larger profile it copies a sidecar file and asks you to select or drop it in the report, because a browser cannot automatically read a neighboring file under `file://`. Use `--inline-limit-mib N` to change that threshold. `--open` launches the generated page with the system opener; `--no-open` overrides `SPANSCOPE_OPEN=1`.
 
 Install the CLI with `cargo install cargo-spanscope --version 0.1.0` to use `cargo spanscope profile.json --output report` from any project. The `cargo run -p cargo-spanscope -- ...` form works from this checkout without installation.
+
+For CI, add `--baseline baseline.json` and repeat thresholds such as
+`--fail-if 'p99:+10%'` or `--fail-if 'self:+15%'`. The command exits
+unsuccessfully on a regression while still producing the offline report;
+`--summary result.md` also writes a Markdown job summary.
+
+Repeat `--export` to create Chrome/Perfetto Trace Event JSON and Speedscope
+artifacts alongside the report, for example `--export chrome:trace.json` and
+`--export speedscope:profile.speedscope.json`.
 
 ## Instrument your application
 
@@ -36,8 +45,10 @@ use spanscope::config::ConfigBuilder;
 
 #[spanscope::trace(root)]
 fn run_job() {
+    spanscope::attribute!("job.kind", "batch");
     let result = calculate();
     spanscope::metric!("result", result);
+    spanscope::outcome!("ok");
 }
 
 #[spanscope::trace]
@@ -57,7 +68,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-`#[trace(root)]` defines a sampled root invocation; nested `#[trace]` functions and manual `span!` guards form its call chain. Async function bodies are measured during polls, with context removed while suspended. To preserve ancestry across a spawned thread, capture `spanscope::context::propagate()` in the parent and call `handle.attach()` in the worker. For a spawned future, use `handle.wrap(future)`. See the runnable [Tokio](spanscope/examples/tokio_tasks.rs) and [Rayon](spanscope/examples/rayon_workers.rs) examples.
+`#[trace(root)]` defines a sampled root invocation; nested `#[trace]` functions and manual `span!` guards form its call chain. `attribute!` adds bounded string dimensions and `outcome!` records a bounded application result on active roots; repeated values use last-write-wins semantics. Async function bodies are measured during polls, with context removed while suspended. To preserve ancestry across a spawned thread, capture `spanscope::context::propagate()` in the parent and call `handle.attach()` in the worker. For a spawned future, use `handle.wrap(future)`. See the runnable [Tokio](spanscope/examples/tokio_tasks.rs) and [Rayon](spanscope/examples/rayon_workers.rs) examples.
 
 You can also configure a program through `spanscope::config::init_from_args(std::env::args())`, which consumes `--spanscope-*` arguments and returns the remaining application arguments. Explicit builder values take precedence over `SPANSCOPE_*` environment variables, then defaults. Output formats are JSON, gzip JSON, and a text summary. Automatic flush is best effort at normal process exit; an explicit `flush()` reports errors and is the reliable choice. The [runtime guide](spanscope/README.md) lists settings and lifecycle details.
 
@@ -73,7 +84,7 @@ You can also configure a program through `spanscope::config::init_from_args(std:
 | `viewer` | With `SPANSCOPE_OPEN=1`, emits the offline HTML alongside a runtime-exported profile and asks the system to open it. |
 | `ml` | Reserved analysis boundary; no ML algorithms are implemented yet. |
 
-The profile contains exact integer counters, but charts may use approximate floating-point coordinates for very large values. Root interval evidence can be partial or truncated; the flame graph and caller network are aggregates, **not an exact concurrent critical path**. The individual-call list only shows retained evidence. Causal analysis and ML remain planned. The report currently parses and indexes a complete profile in memory; the 50 MiB inline setting is a delivery threshold, not a tested capacity limit. Synchronous instrumentation has not yet met the project's <50 ns median target.
+The profile contains exact integer counters, but charts may use approximate floating-point coordinates for very large values. Root interval evidence can be partial or truncated; the flame graph and caller network are aggregates, **not an exact concurrent critical path**. The Timeline view only computes a longest path from explicit causal segments and labels incomplete evidence accordingly; the current runtime does not yet emit those dependency edges. The individual-call list only shows retained evidence. Deterministic insights describe observed evidence rather than proving a defect. ML remains planned. File reading, gzip decompression, validation, and indexing run in a worker, but the complete profile and index are still held in memory; the 50 MiB inline setting is a delivery threshold, not a tested capacity limit. Chromium browsers exposing the File System Access API also show **Live follow**, which reloads a selected profile when it changes. Synchronous instrumentation has not yet met the project's <50 ns median target.
 
 ## Develop and verify
 

@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import fixture from '../fixtures/example.json';
-import { asBigInt, buildFlame, filterChains, parseLosslessJson, validateAndIndex } from '../src/core';
+import asyncFixture from '../../spanscope/tests/fixtures/async-partial.json';
+import { asBigInt, buildCriticalPath, buildFlame, filterChains, parseLosslessJson, validateAndIndex } from '../src/core';
 import { metricNames, summarizeRoutines } from '../src/insights';
+import { compareProfiles } from '../src/comparison';
 
 describe('lossless parser', () => {
   it('preserves unsafe positive and negative counters without altering strings', () => {
@@ -50,14 +52,45 @@ describe('profile index and filters', () => {
   it('answers who called a routine and how often in the capture and a single run', () => {
     const all = summarizeRoutines(index, null);
     const transform = all.find(row => index.spans.get(row.spanId)?.name === 'demo::transform')!;
+    const transformChain = index.profile.chains.find(chain => Number(chain.path[chain.path.length - 1]) === transform.spanId)!;
     expect(transform.calls).toBe(880n);
-    expect(transform.callers).toEqual([{ spanId: 0, calls: 880n, inclusiveWallNs: 81482n }]);
+    expect(transform.callers).toEqual([{ spanId: 0, calls: 880n, inclusiveWallNs: asBigInt(transformChain.total_ns) }]);
     expect(all.find(row => row.spanId === 0)?.callees[0].calls).toBe(880n);
     const first = summarizeRoutines(index, fixture.roots[0].uid);
     const localTransform = first.find(row => row.spanId === transform.spanId)!;
     expect(localTransform.calls).toBe(200n);
     expect(localTransform.callers[0].calls).toBe(200n);
-    expect(localTransform.selfActiveNs).toBe(19765n);
+    const rootSelf = fixture.roots[0].chain_self_ns as Record<string, number>;
+    expect(localTransform.selfActiveNs).toBe(asBigInt(rootSelf[String(transformChain.id)]));
     expect(metricNames(index)).toEqual(['input_size']);
+  });
+});
+
+describe('profile comparison', () => {
+  it('matches routines across profile-local ids and reports regressions', () => {
+    const baseline = validateAndIndex(fixture);
+    const candidateProfile = structuredClone(fixture);
+    candidateProfile.chains[1].self_ns *= 2;
+    candidateProfile.chains[1].alloc_bytes = 4096;
+    const candidate = validateAndIndex(candidateProfile);
+    const comparison = compareProfiles(baseline, candidate);
+    const transform = comparison.rows.find(row => row.name === 'demo::transform')!;
+    expect(transform.baseline?.calls).toBe(880n);
+    expect(transform.candidate?.selfNs).toBe(transform.baseline!.selfNs * 2n);
+    expect(transform.candidate?.p99Ns).toBe(asBigInt(fixture.chains[1].p99_ns));
+    expect(transform.candidate?.allocBytes).toBe(4096n);
+    expect(comparison.regressions).toBe(1);
+    expect(comparison.added).toBe(0);
+    expect(comparison.removed).toBe(0);
+  });
+});
+
+describe('causal critical path', () => {
+  it('uses only explicit segment dependencies', () => {
+    const root = validateAndIndex(asyncFixture).profile.roots[0];
+    const path = buildCriticalPath(root)!;
+    expect(path.segmentIds).toEqual([0, 1]);
+    expect(path.durationNs).toBe(20n);
+    expect(path.complete).toBe(false);
   });
 });
