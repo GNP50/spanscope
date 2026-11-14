@@ -7,8 +7,10 @@ use proc_macro::TokenStream;
 
 /// Profiles one function invocation when the runtime's `enabled` feature is set.
 ///
-/// Supported syntax is `#[trace]`, `#[trace(root)]`, and
-/// `#[trace(name = "label", tags("one", "two"))]`.
+/// Supported syntax is `#[trace]`, `#[trace(root)]`,
+/// `#[trace(name = "label", tags("one", "two"))]`, and `#[trace(track(arg))]`.
+/// `track` names reference arguments (or `self`) whose field accesses and
+/// value changes are recorded when the `object-tracking` feature is set.
 #[proc_macro_attribute]
 pub fn trace(arguments: TokenStream, function: TokenStream) -> TokenStream {
     #[cfg(not(feature = "enabled"))]
@@ -22,6 +24,26 @@ pub fn trace(arguments: TokenStream, function: TokenStream) -> TokenStream {
         enabled::expand(arguments, function)
     }
 }
+
+/// Makes a struct or enum trackable by `#[trace(track(...))]`.
+///
+/// Generates nothing unless the runtime's `object-tracking` feature is set.
+#[proc_macro_derive(Tracked, attributes(tracked))]
+pub fn tracked(input: TokenStream) -> TokenStream {
+    #[cfg(not(feature = "object-tracking"))]
+    {
+        let _ = input;
+        TokenStream::new()
+    }
+
+    #[cfg(feature = "object-tracking")]
+    {
+        tracking::derive(input)
+    }
+}
+
+#[cfg(feature = "object-tracking")]
+mod tracking;
 
 #[cfg(feature = "enabled")]
 mod enabled {
@@ -40,6 +62,8 @@ mod enabled {
         name: Option<LitStr>,
         tags: Vec<LitStr>,
         has_tags: bool,
+        track: Vec<syn::Ident>,
+        has_track: bool,
     }
 
     fn parse_options(tokens: TokenStream2) -> Result<Options, Error> {
@@ -83,10 +107,23 @@ mod enabled {
                         .into_iter()
                         .collect();
                 }
+                Meta::List(list) if list.path.is_ident("track") => {
+                    if options.has_track {
+                        return Err(Error::new_spanned(list, "duplicate track option"));
+                    }
+                    options.has_track = true;
+                    let parser = |input: syn::parse::ParseStream<'_>| {
+                        Punctuated::<syn::Ident, Token![,]>::parse_terminated_with(
+                            input,
+                            syn::ext::IdentExt::parse_any,
+                        )
+                    };
+                    options.track = parser.parse2(list.tokens)?.into_iter().collect();
+                }
                 other => {
                     return Err(Error::new_spanned(
                         other,
-                        "expected root, name = \"...\", or tags(\"...\")",
+                        "expected root, name = \"...\", tags(\"...\"), or track(...)",
                     ))
                 }
             }
@@ -94,7 +131,7 @@ mod enabled {
         Ok(options)
     }
 
-    fn runtime_path() -> Result<TokenStream2, Error> {
+    pub(crate) fn runtime_path() -> Result<TokenStream2, Error> {
         match proc_macro_crate::crate_name("spanscope") {
             Ok(proc_macro_crate::FoundCrate::Itself) => Ok(quote!(::spanscope)),
             Ok(proc_macro_crate::FoundCrate::Name(name)) => {
@@ -127,6 +164,7 @@ mod enabled {
         options: Options,
     ) -> Result<(), Error> {
         check_signature(signature)?;
+        check_tracked(signature, &options.track)?;
         let runtime = runtime_path()?;
         let ident = &signature.ident;
         let name = options.name.map_or_else(
@@ -141,6 +179,18 @@ mod enabled {
                     #name, file!(), line!(), &[#(#tags),*]
                 );
         };
+        #[cfg(feature = "object-tracking")]
+        if !options.track.is_empty() {
+            *block = crate::tracking::instrument_tracked(
+                signature,
+                block,
+                &options.track,
+                &runtime,
+                &descriptor,
+                root,
+            );
+            return Ok(());
+        }
         if signature.asyncness.is_some() {
             let original = block.clone();
             *block = parse_quote!({
@@ -157,6 +207,62 @@ mod enabled {
             block.stmts.insert(0, descriptor);
         }
         Ok(())
+    }
+
+    /// Tracked arguments must be references that remain usable after the body.
+    fn check_tracked(signature: &syn::Signature, tracked: &[syn::Ident]) -> Result<(), Error> {
+        if tracked.is_empty() {
+            return Ok(());
+        }
+        for (index, ident) in tracked.iter().enumerate() {
+            if tracked[..index].contains(ident) {
+                return Err(Error::new_spanned(ident, "duplicate tracked argument"));
+            }
+            let reference = signature.inputs.iter().find_map(|input| match input {
+                syn::FnArg::Receiver(receiver) if ident == "self" => Some(
+                    receiver.reference.is_some() || matches!(*receiver.ty, syn::Type::Reference(_)),
+                ),
+                syn::FnArg::Typed(typed) => match &*typed.pat {
+                    syn::Pat::Ident(pat) if pat.ident == *ident => {
+                        Some(matches!(*typed.ty, syn::Type::Reference(_)))
+                    }
+                    _ => None,
+                },
+                _ => None,
+            });
+            match reference {
+                None => {
+                    return Err(Error::new_spanned(
+                        ident,
+                        "track(...) must name an argument of this function",
+                    ))
+                }
+                Some(false) => return Err(Error::new_spanned(
+                    ident,
+                    "tracked arguments must be references such as &T, &mut T, &self, or &mut self",
+                )),
+                Some(true) => {}
+            }
+        }
+        if let syn::ReturnType::Type(_, ty) = &signature.output {
+            if matches!(**ty, syn::Type::Never(_)) || borrows(ty.to_token_stream()) {
+                return Err(Error::new_spanned(
+                    ty,
+                    "track(...) is unsupported on functions returning borrowed data or `!`",
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    fn borrows(tokens: TokenStream2) -> bool {
+        tokens.into_iter().any(|token| match token {
+            proc_macro2::TokenTree::Punct(punct) => {
+                punct.as_char() == '&' || punct.as_char() == '\''
+            }
+            proc_macro2::TokenTree::Group(group) => borrows(group.stream()),
+            _ => false,
+        })
     }
 
     fn instrument(mut function: ItemFn, options: Options) -> Result<TokenStream2, Error> {

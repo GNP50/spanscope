@@ -23,13 +23,17 @@ assert not any(line.startswith(("serde v", "serde_json v", "schemars v"))
 assert "features=[enabled]" not in next(line for line in disabled if line.startswith("spanscope-macros v"))
 print("disabled graph: facade + disabled proc macro and its host-only parsing dependencies")
 
-for feature in ("serialization", "schema", "enabled", "memory", "alloc-tracker", "ml", "viewer"):
+for feature in ("serialization", "schema", "enabled", "memory", "alloc-tracker", "ml", "viewer",
+                "object-tracking"):
     lines = tree(feature)
     facade = lines[0].split("features=[", 1)[1].rstrip("]").split(",")
     macro = next(line for line in lines if line.startswith("spanscope-macros v"))
+    macro_features = macro.split("features=[", 1)[1].rstrip("]").split(",")
     collecting = feature not in ("serialization", "schema")
+    tracking = feature == "object-tracking"
     assert ("enabled" in facade) == collecting, (feature, lines)
-    assert ("features=[enabled]" in macro) == collecting, (feature, macro)
+    assert ("enabled" in macro_features) == collecting, (feature, macro)
+    assert ("object-tracking" in macro_features) == tracking, (feature, macro)
     if feature == "alloc-tracker":
         assert "memory" in facade
     subprocess.run(["cargo", "check", "--locked", "-p", "spanscope", "--no-default-features",

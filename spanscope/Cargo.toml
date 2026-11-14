@@ -21,6 +21,7 @@ memory = ["enabled"]
 alloc-tracker = ["memory"]
 ml = ["enabled"]
 viewer = ["enabled"]
+object-tracking = ["enabled", "spanscope-macros/object-tracking"]
 
 [dependencies]
 spanscope-macros = { path = "../spanscope-macros", version = "=0.1.0", default-features = false }
@@ -56,6 +57,10 @@ required-features = ["enabled"]
 [[example]]
 name = "recursion"
 required-features = ["enabled"]
+
+[[example]]
+name = "object_tracking"
+required-features = ["object-tracking"]
 
 [[test]]
 name = "profile_contract"

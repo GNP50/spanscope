@@ -11,6 +11,14 @@ export type AnalysisStatus = "complete" | "skipped" | "insufficient_data" | "bud
  */
 export type SelfTimeKind = "synchronous" | "active" | "unavailable";
 /**
+ * How an instance is identified.
+ */
+export type KeyKind = "generated" | "domain" | "address";
+/**
+ * How a path was reached in source.
+ */
+export type AccessKind = "read" | "write" | "call";
+/**
  * How a recorded invocation finished.
  */
 export type Completion = "complete" | "cancelled" | "incomplete";
@@ -43,6 +51,10 @@ export interface Profile {
    * Program and capture metadata.
    */
   meta: Metadata;
+  /**
+   * Object-tracking results; absent unless the `object-tracking` feature recorded data.
+   */
+  objects?: Objects | null;
   /**
    * Retained per-invocation root snapshots, ordered by start time and UID.
    */
@@ -417,6 +429,232 @@ export interface Host {
    * Operating system identifier, such as `linux`.
    */
   os: string;
+  [k: string]: unknown;
+}
+/**
+ * Tracked instances, field counters, and access sites from `#[trace(track(...))]`.
+ */
+export interface Objects {
+  /**
+   * Retention limits and losses.
+   */
+  capture: ObjectCapture;
+  /**
+   * Per-function counters for each path of each type.
+   */
+  fields: FieldStats[];
+  /**
+   * Observed instances, sorted by type and key.
+   */
+  instances: Instance[];
+  /**
+   * Execution counts of individual source access sites.
+   */
+  sites: AccessSite[];
+  /**
+   * Tracked types, sorted by name.
+   */
+  types: ObjectType[];
+  [k: string]: unknown;
+}
+/**
+ * Object-tracking retention limits.
+ */
+export interface ObjectCapture {
+  /**
+   * Instances first seen after the limit was reached; their calls are not counted.
+   */
+  dropped_instances: number;
+  /**
+   * Maximum retained versions per instance (`SPANSCOPE_OBJECT_HISTORY`).
+   */
+  history_limit: number;
+  /**
+   * Maximum retained instances (`SPANSCOPE_MAX_OBJECTS`).
+   */
+  max_instances: number;
+  [k: string]: unknown;
+}
+/**
+ * Counters for one path of one type within one function.
+ */
+export interface FieldStats {
+  /**
+   * Executed method-call sites; the method may or may not mutate.
+   */
+  calls: number;
+  /**
+   * Calls after which the value at this path differed.
+   */
+  changes: number;
+  /**
+   * Path relative to the type; empty for the whole value.
+   */
+  path: string;
+  /**
+   * Executed read sites.
+   */
+  reads: number;
+  /**
+   * Span ID of the function.
+   */
+  span: number;
+  /**
+   * Type ID.
+   */
+  type_id: number;
+  /**
+   * Executed write sites.
+   */
+  writes: number;
+  [k: string]: unknown;
+}
+/**
+ * One observed instance and its history.
+ */
+export interface Instance {
+  /**
+   * Per-function counters.
+   */
+  calls: InstanceCalls[];
+  /**
+   * Instance this one was cloned from, when both were observed.
+   */
+  cloned_from?: number | null;
+  /**
+   * Change count per path relative to the instance; `[*]` stands for any index or key.
+   */
+  field_changes: {
+    [k: string]: number;
+  };
+  /**
+   * Most recent version transitions, oldest first.
+   */
+  history: Version[];
+  /**
+   * Transitions evicted from the bounded history.
+   */
+  history_dropped: number;
+  /**
+   * Profile-local instance identifier.
+   */
+  id: number;
+  /**
+   * Display key, unique within the type.
+   */
+  key: string;
+  /**
+   * Origin of the key.
+   */
+  key_kind: KeyKind;
+  /**
+   * Instance that contained this one when it last changed.
+   */
+  parent?: number | null;
+  /**
+   * Instance that replaced this one in place during a tracked call.
+   */
+  replaced_by?: number | null;
+  /**
+   * Type ID.
+   */
+  type_id: number;
+  /**
+   * Number of observed value changes.
+   */
+  versions: number;
+  [k: string]: unknown;
+}
+/**
+ * One instance's counters for one function.
+ */
+export interface InstanceCalls {
+  /**
+   * Calls that received this instance as a tracked argument.
+   */
+  calls: number;
+  /**
+   * Calls after which this instance's value differed, directly or as a nested instance.
+   */
+  changed_calls: number;
+  /**
+   * Span ID of the function.
+   */
+  span: number;
+  /**
+   * Executed access sites on this instance.
+   */
+  touches: number;
+  [k: string]: unknown;
+}
+/**
+ * One retained version transition.
+ */
+export interface Version {
+  /**
+   * Changed paths relative to the instance, at most 32.
+   */
+  changed: string[];
+  /**
+   * Source lines of write and call sites executed during the call.
+   */
+  lines: number[];
+  /**
+   * Span ID of the call that produced it.
+   */
+  span: number;
+  /**
+   * Capture-relative time when the call returned.
+   */
+  t_ns: number;
+  /**
+   * Version number after the change, starting at 1.
+   */
+  version: number;
+  [k: string]: unknown;
+}
+/**
+ * Execution count of one source access site.
+ */
+export interface AccessSite {
+  /**
+   * Access kind.
+   */
+  access: AccessKind;
+  /**
+   * Executions.
+   */
+  count: number;
+  /**
+   * One-based source line.
+   */
+  line: number;
+  /**
+   * Path relative to the argument.
+   */
+  path: string;
+  /**
+   * Span ID of the function.
+   */
+  span: number;
+  /**
+   * Type ID of the tracked argument.
+   */
+  type_id: number;
+  [k: string]: unknown;
+}
+/**
+ * A type that derives `Tracked`, or the Rust type of a tracked argument.
+ */
+export interface ObjectType {
+  /**
+   * Profile-local type identifier.
+   */
+  id: number;
+  /**
+   * Module-qualified type name.
+   */
+  name: string;
   [k: string]: unknown;
 }
 /**

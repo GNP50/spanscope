@@ -176,6 +176,22 @@ pub(crate) fn is_initialized() -> bool {
     REGISTRY.get().is_some()
 }
 
+/// Snapshot-local ID of a descriptor, registering it if needed.
+#[cfg(feature = "object-tracking")]
+pub(crate) fn descriptor_id(descriptor: &'static SpanDescriptor) -> Option<u32> {
+    descriptor.id(registry())
+}
+
+/// Monotonic nanoseconds since collection initialization.
+#[cfg(feature = "object-tracking")]
+pub(crate) fn elapsed_ns() -> u64 {
+    registry()
+        .start
+        .elapsed()
+        .as_nanos()
+        .min(u128::from(u64::MAX)) as u64
+}
+
 #[derive(Clone)]
 struct RootRecord {
     uid: String,
@@ -1519,6 +1535,9 @@ pub struct Snapshot {
     pub sample_rate: f64,
     /// Whether this build can sample Linux resident set size.
     pub rss_supported: bool,
+    /// Object-tracking counters, instances, and version history.
+    #[cfg(feature = "object-tracking")]
+    pub objects: crate::objects::ObjectSnapshot,
 }
 
 /// Captures all currently published observations without waiting for active threads.
@@ -1633,6 +1652,9 @@ fn snapshot_inner(publish_current: bool) -> Snapshot {
             evidence_truncated: root.evidence_truncated,
         })
         .collect();
+    // Object tracking registers descriptors on entry; copy it before descriptors.
+    #[cfg(feature = "object-tracking")]
+    let objects = crate::objects::snapshot();
     // A thread can register a descriptor and publish its first observation
     // while we copy slots. Read descriptors afterward so every copied path
     // resolves to metadata in this snapshot.
@@ -1665,6 +1687,8 @@ fn snapshot_inner(publish_current: bool) -> Snapshot {
         dropped_records: registry.dropped.load(Ordering::Relaxed),
         sample_rate: f64::from_bits(registry.sample_rate_bits.load(Ordering::Relaxed)),
         rss_supported: cfg!(all(feature = "memory", target_os = "linux")),
+        #[cfg(feature = "object-tracking")]
+        objects,
     }
 }
 

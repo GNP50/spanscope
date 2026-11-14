@@ -13,6 +13,20 @@
 /// Attribute macro for function instrumentation.
 pub use spanscope_macros::trace;
 
+/// Derive macro that makes a type trackable by `#[trace(track(...))]`.
+///
+/// Field attributes: `#[tracked(id)]` marks the instance identity (an
+/// [`InstanceId`] or a domain key such as an integer or string),
+/// `#[tracked(skip)]` excludes a field, and `#[tracked(opaque)]` compares a
+/// field through its `Hash` implementation. Without the `object-tracking`
+/// feature the derive generates nothing.
+pub use spanscope_macros::Tracked;
+
+/// Stable identity for tracked object instances.
+pub use instance::InstanceId;
+
+mod instance;
+
 extern crate self as spanscope;
 
 /// Version of the draft profile format; not yet a released compatibility promise.
@@ -36,6 +50,10 @@ mod host_viewer;
 mod runtime;
 #[cfg(feature = "enabled")]
 mod stats;
+
+/// Object tracking: hash trees, access counters, and per-instance history.
+#[cfg(feature = "object-tracking")]
+pub mod objects;
 
 /// Application-installed gross allocation counter.
 #[cfg(feature = "alloc-tracker")]
@@ -176,6 +194,8 @@ macro_rules! metric {
 #[cfg(feature = "enabled")]
 #[doc(hidden)]
 pub mod __private {
+    #[cfg(feature = "object-tracking")]
+    pub use crate::objects::{observe, Access, FieldSite, Observed, TrackCall};
     pub use crate::runtime::{
         attribute, enter, metric, outcome, trace_future, SpanDescriptor, SpanGuard,
     };
