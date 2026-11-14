@@ -1,4 +1,5 @@
-import { asBigInt, asNumber, type ExactChain, type ProfileIndex } from './core';
+import { asBigInt, asNumber, byBigIntDesc } from './format';
+import type { ExactChain, ProfileIndex } from './types';
 
 export interface CallRelation {
   spanId: number;
@@ -63,11 +64,35 @@ export function summarizeRoutines(index: ProfileIndex, rootUid: string | null): 
       addRelation(ensure(parent).callees, leaf, count, total);
     }
   }
-  const sorted = (relations: Map<number, CallRelation>) => [...relations.values()].sort((a, b) => b.calls > a.calls ? 1 : b.calls < a.calls ? -1 : a.spanId - b.spanId);
-  return [...routines.values()].map(row => ({ ...row, callers: sorted(row.callers), callees: sorted(row.callees) }))
-    .sort((a, b) => b.selfActiveNs > a.selfActiveNs ? 1 : b.selfActiveNs < a.selfActiveNs ? -1 : a.spanId - b.spanId);
+  const sorted = (relations: Map<number, CallRelation>) =>
+    [...relations.values()].sort((a, b) => byBigIntDesc(a.calls, b.calls) || a.spanId - b.spanId);
+  return [...routines.values()]
+    .map(row => ({
+      ...row,
+      callers: sorted(row.callers),
+      callees: sorted(row.callees),
+      paths: row.paths.sort((a, b) => byBigIntDesc(a.calls, b.calls) || asNumber(a.chain.id) - asNumber(b.chain.id)),
+    }))
+    .sort((a, b) => byBigIntDesc(a.selfActiveNs, b.selfActiveNs) || a.spanId - b.spanId);
 }
 
 export function metricNames(index: ProfileIndex): string[] {
   return [...new Set(index.profile.roots.flatMap(root => Object.keys(root.metrics)))].sort();
+}
+
+/** Calls and exclusive time of one routine in each retained run that includes it. */
+export function routineByRoot(index: ProfileIndex, spanId: number): { uid: string; calls: bigint; selfActiveNs: bigint }[] {
+  const rows: { uid: string; calls: bigint; selfActiveNs: bigint }[] = [];
+  for (const root of index.profile.roots) {
+    let calls = 0n;
+    let self = 0n;
+    for (const [id, count] of root.chains) {
+      const chain = index.chains.get(asNumber(id));
+      if (!chain || asNumber(chain.path[chain.path.length - 1]) !== spanId) continue;
+      calls += asBigInt(count);
+      self += asBigInt(root.chain_self_ns[String(id)] ?? 0);
+    }
+    if (calls > 0n) rows.push({ uid: root.uid, calls, selfActiveNs: self });
+  }
+  return rows;
 }

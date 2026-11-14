@@ -21,6 +21,7 @@
     "echarts": "^6.0.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
+    "skeinmap": "github:GNP50/skeinmap#dbebb99fc5750281b1ad000b0843b9caee6dae72",
     "tailwindcss": "^4.1.0",
     "zustand": "^5.0.16"
   },

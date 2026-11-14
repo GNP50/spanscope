@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import fixture from '../fixtures/example.json';
 import asyncFixture from '../../spanscope/tests/fixtures/async-partial.json';
-import { asBigInt, buildCriticalPath, buildFlame, filterChains, parseLosslessJson, validateAndIndex } from '../src/core';
-import { metricNames, summarizeRoutines } from '../src/insights';
-import { compareProfiles } from '../src/comparison';
+import { asBigInt, buildCriticalPath, buildFlame, filterChains, parseLosslessJson, validateAndIndex } from '../src/model';
+import { metricNames, summarizeRoutines } from '../src/model/routines';
+import { compareProfiles } from '../src/model/comparison';
 
 describe('lossless parser', () => {
   it('preserves unsafe positive and negative counters without altering strings', () => {

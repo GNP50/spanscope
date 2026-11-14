@@ -1,6 +1,6 @@
 import Ajv from 'ajv';
 import schema from '../../schema/profile-v1.schema.json';
-import { parseLosslessJson, validateAndIndex } from './core';
+import { parseLosslessJson, validateAndIndex } from './model';
 
 const validate = new Ajv({ strict: false, allErrors: false }).compile(schema);
 
