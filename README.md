@@ -14,7 +14,7 @@ cargo run -p spanscope --features enabled --example export_profile -- \
 cargo run -p cargo-spanscope -- profile.json --output report
 ```
 
-Open `report/index.html` directly in a modern browser. The example performs instrumented work and writes a real schema-v1 profile. The report works over `file://`; it does not need a web server or a network connection. Start with **Insights** for evidence-backed diagnostics covering hotspots, tail latency, variance, cancellations, allocations, and graph fanout. **Routines** shows observed call counts, exclusive active cost, inclusive wall sums, direct callers, callees, full paths, and copyable source locations. **Compare** loads an earlier baseline and highlights self-time, p99, call-count, and allocation deltas. **Timeline** shows retained intervals by thread and computes a longest observed path only from explicit causal evidence. **Runs & metrics** breaks down one root invocation, including its attributes, outcome, individual call intervals, and metrics. **Dependencies** draws the interactive caller graph and shows captured causal segment edges when available. The structural flame graph, sortable chains and raw records remain available. Filters and selections are linked across views and stored in the URL hash.
+Open `report/index.html` directly in a modern browser. The example performs instrumented work and writes a real schema-v1 profile. The report works over `file://`; it does not need a web server or a network connection. Start with **Insights** for evidence-backed diagnostics covering hotspots, tail latency, variance, cancellations, allocations, and graph fanout. **Routines** shows observed call counts, exclusive active cost, inclusive wall sums, direct callers, callees, full paths, and copyable source locations. **Compare** loads an earlier baseline and highlights self-time, p99, call-count, and allocation deltas. **Timeline** shows retained intervals by thread and computes a longest observed path only from explicit causal evidence. **Runs & metrics** breaks down one root invocation, including its attributes, outcome, individual call intervals, and metrics. **Dependencies** draws the interactive caller graph and shows captured causal segment edges when available. **Patterns** (with the `ml` feature) groups runs by shape and shows outliers, level shifts and growth fits; **Objects** (with `object-tracking`) explores tracked instances. The structural flame graph, sortable chains and raw records remain available. Filters and selections are linked across views and stored in the URL hash.
 
 For a gzip profile, pass `profile.json.gz` instead. The CLI embeds profiles of up to 50 MiB uncompressed by default. For a larger profile it copies a sidecar file and asks you to select or drop it in the report, because a browser cannot automatically read a neighboring file under `file://`. Use `--inline-limit-mib N` to change that threshold. `--open` launches the generated page with the system opener; `--no-open` overrides `SPANSCOPE_OPEN=1`.
 
@@ -97,6 +97,20 @@ At compile time the macro adds a counter before every statement that reads, writ
 
 Limits: tracked arguments must be references, and the function must not return borrowed data. Counters only see accesses written in the tracked function itself; changes made through aliases, called functions, or interior mutability are still detected by the hash comparison but are not attributed to a line. Instances without an ID field are keyed by address and marked approximate. Collections longer than 1024 elements are compared as a whole. `SPANSCOPE_MAX_OBJECTS` (default 10,000) and `SPANSCOPE_OBJECT_HISTORY` (default 64) bound memory. Hashing costs time proportional to the argument's size on every call, and tracking does not follow span sampling. Run `cargo run -p spanscope --features object-tracking --example object_tracking` for a complete example.
 
+## Find patterns across runs
+
+With the `ml` feature, export adds statistical sections to `analysis.sections` and turns strong findings into insights:
+
+| Section | Method | Finds |
+| --- | --- | --- |
+| `clusters` | k-means over each run's per-routine time shares and log duration; k by silhouette, no cluster smaller than 3 runs | Distinct shapes of execution and the routines that set them apart |
+| `anomalies` | median/MAD robust z of log duration within each shape | Runs much slower or faster than runs like them |
+| `changepoints` | binary segmentation with a Mann–Whitney rank statistic over runs in start order | When run duration shifted, and by how much |
+| `complexity` | least-squares fits of log n, n, n log n, n² against numeric root metrics, for run duration and top routines | Routines that grow quadratically with input size |
+| `object_churn` | robust z of version counts within each tracked type | Instances that change far more than their peers |
+
+Everything is deterministic and dependency-free, runs offline at export, and reports `insufficient_data` when there are too few runs. Try `cargo run -p spanscope --features ml,object-tracking --example ml_patterns`.
+
 ## Features and current limits
 
 | Feature | Effect |
@@ -107,10 +121,10 @@ Limits: tracked arguments must be references, and the function must not return b
 | `memory` | Samples Linux process RSS at root entry and exit. |
 | `alloc-tracker` | Adds an opt-in `TrackingAllocator` wrapper for gross allocation counts and requested bytes; the application must install it as its global allocator. |
 | `viewer` | With `SPANSCOPE_OPEN=1`, emits the offline HTML alongside a runtime-exported profile and asks the system to open it. |
-| `ml` | Reserved analysis boundary; no ML algorithms are implemented yet. |
+| `ml` | Adds pattern analysis at export: run clustering, outlier runs, duration level shifts, growth-model fits against root metrics, and object churn, each with evidence-backed insights. |
 | `object-tracking` | Records field accesses and value changes of `#[derive(Tracked)]` instances passed to `#[trace(track(...))]` functions. Implies `enabled`. |
 
-The profile contains exact integer counters, but charts may use approximate floating-point coordinates for very large values. Root interval evidence can be partial or truncated; the flame graph and caller network are aggregates, **not an exact concurrent critical path**. The Timeline view only computes a longest path from explicit causal segments and labels incomplete evidence accordingly; the current runtime does not yet emit those dependency edges. The individual-call list only shows retained evidence. Deterministic insights describe observed evidence rather than proving a defect. ML remains planned. File reading, gzip decompression, validation, and indexing run in a worker, but the complete profile and index are still held in memory; the 50 MiB inline setting is a delivery threshold, not a tested capacity limit. Chromium browsers exposing the File System Access API also show **Live follow**, which reloads a selected profile when it changes. Synchronous instrumentation has not yet met the project's <50 ns median target.
+The profile contains exact integer counters, but charts may use approximate floating-point coordinates for very large values. Root interval evidence can be partial or truncated; the flame graph and caller network are aggregates, **not an exact concurrent critical path**. The Timeline view only computes a longest path from explicit causal segments and labels incomplete evidence accordingly; the current runtime does not yet emit those dependency edges. The individual-call list only shows retained evidence. Deterministic insights describe observed evidence rather than proving a defect, and pattern sections report insufficient data rather than guessing. File reading, gzip decompression, validation, and indexing run in a worker, but the complete profile and index are still held in memory; the 50 MiB inline setting is a delivery threshold, not a tested capacity limit. Chromium browsers exposing the File System Access API also show **Live follow**, which reloads a selected profile when it changes. Synchronous instrumentation has not yet met the project's <50 ns median target.
 
 ## Develop and verify
 

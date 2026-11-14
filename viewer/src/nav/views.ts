@@ -3,6 +3,7 @@ export const VIEWS = [
   { id: 'overview', label: 'Overview', icon: '◫', filters: true },
   { id: 'compare', label: 'Compare', icon: '±', filters: false },
   { id: 'insights', label: 'Insights', icon: '◇', filters: false },
+  { id: 'patterns', label: 'Patterns', icon: '∴', filters: false },
   { id: 'timeline', label: 'Timeline', icon: '↦', filters: false },
   { id: 'routines', label: 'Routines', icon: '◉', filters: true },
   { id: 'runs', label: 'Runs & metrics', icon: '▦', filters: true },

@@ -92,7 +92,9 @@ function entityLabel(index: ProfileIndex, entity: Entity): string {
       return `Chain #${entity.id}`;
     case 'root': {
       const root = index.roots.get(entity.uid);
-      return root ? `${shortName(rootName(index, root))} · ${entity.uid.slice(0, 8)}` : entity.uid;
+      // UIDs share a time-based prefix, so the run's position is the readable label.
+      const position = index.profile.roots.indexOf(root!) + 1;
+      return root ? `Run #${position} · ${shortName(rootName(index, root))}` : entity.uid;
     }
     case 'type':
       return shortName(index.objects?.types.get(entity.id)?.name ?? `Type #${entity.id}`);

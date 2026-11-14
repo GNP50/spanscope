@@ -4,6 +4,7 @@ import { useFollow, useGlobalInput, useLoader } from './app/hooks';
 import { filterChains, type ExactChain, type ProfileIndex } from './model';
 import { viewMeta, type View } from './nav/views';
 import { useProfile } from './store';
+import { ErrorBoundary } from './ui/ErrorBoundary';
 import { Chains } from './views/Chains';
 import { Compare } from './views/Compare';
 import { Dependencies } from './views/Dependencies';
@@ -11,6 +12,7 @@ import { Flame } from './views/Flame';
 import { Insights } from './views/Insights';
 import { Objects } from './views/Objects';
 import { Overview } from './views/Overview';
+import { Patterns } from './views/Patterns';
 import { Raw } from './views/Raw';
 import { Routines } from './views/Routines';
 import { Runs } from './views/Runs';
@@ -29,6 +31,8 @@ function CurrentView({ view, index, chains, openBaseline }: { view: View; index:
       return <Compare baseline={baselineIndex} candidate={index} baselineName={baselineFilename} candidateName={filename} onOpenBaseline={openBaseline} />;
     case 'insights':
       return <Insights index={index} />;
+    case 'patterns':
+      return <Patterns index={index} />;
     case 'timeline':
       return <Timeline index={index} />;
     case 'routines':
@@ -103,7 +107,9 @@ export default function App() {
                   <div style={{ width: `${progress * 100}%` }} />
                 </div>
               )}
-              <CurrentView view={view} index={index} chains={chains} openBaseline={openBaseline} />
+              <ErrorBoundary resetKey={view}>
+                <CurrentView view={view} index={index} chains={chains} openBaseline={openBaseline} />
+              </ErrorBoundary>
             </>
           )}
         </main>

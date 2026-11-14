@@ -525,6 +525,34 @@ impl ExportView<'_> {
     }
 }
 
+#[cfg(feature = "ml")]
+impl ExportView<'_> {
+    /// Retained runs with leaf-span exclusive time in the profile's span namespace.
+    fn run_samples(&self) -> Vec<crate::ml::RunSample> {
+        self.root_order
+            .iter()
+            .map(|&index| {
+                let root = &self.snapshot.roots[index];
+                let mut self_by_span = BTreeMap::<u32, u64>::new();
+                for chain in &root.chains {
+                    if let Some(&leaf) = chain.path.last() {
+                        let span = self.old_to_new[leaf as usize];
+                        let entry = self_by_span.entry(span).or_default();
+                        *entry = entry.saturating_add(chain.self_ns);
+                    }
+                }
+                crate::ml::RunSample {
+                    uid: root.uid.clone(),
+                    start_ns: root.start_ns,
+                    duration_ns: root.duration_ns,
+                    self_by_span,
+                    metrics: root.metrics.clone(),
+                }
+            })
+            .collect()
+    }
+}
+
 fn stats_from(chain: &ChainSnapshot) -> Stats {
     Stats {
         count: chain.count,
@@ -615,10 +643,16 @@ impl Serialize for ExportView<'_> {
             .collect::<Vec<_>>();
         threads.sort_by_key(|thread| thread.id);
         output.serialize_field("threads", &threads)?;
-        output.serialize_field(
-            "analysis",
-            &crate::analysis::analyze(&self.spans, &self.chains, &self.graph),
-        )?;
+        #[allow(unused_mut)]
+        let mut analysis = crate::analysis::analyze(&self.spans, &self.chains, &self.graph);
+        #[cfg(feature = "ml")]
+        crate::ml::extend(
+            &mut analysis,
+            &self.spans,
+            &self.run_samples(),
+            objects.as_ref(),
+        );
+        output.serialize_field("analysis", &analysis)?;
         if let Some(objects) = &objects {
             output.serialize_field("objects", objects)?;
         }
