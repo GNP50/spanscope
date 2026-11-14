@@ -1156,6 +1156,13 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
+## skeinmap 0.1.0
+
+SPDX-License-Identifier: MIT OR Apache-2.0
+Homepage: https://github.com/acme/skeinmap#readme
+
+This package ships no license file. Its manifest declares MIT OR Apache-2.0.
+
 ## tslib 2.8.1
 
 SPDX-License-Identifier: 0BSD

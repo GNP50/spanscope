@@ -9,6 +9,7 @@ import { pathToFileURL } from 'node:url';
 const root = resolve(import.meta.dirname, '../..');
 const fixture = resolve(root, 'viewer/fixtures/example.json');
 const causalFixture = resolve(root, 'spanscope/tests/fixtures/async-partial.json');
+const objectsFixture = resolve(root, 'viewer/fixtures/objects.json');
 const cli = resolve(root, 'target/debug/cargo-spanscope');
 function report(profile: string, ...args: string[]) {
   const dir = mkdtempSync(join(tmpdir(), 'spanscope-e2e-'));
@@ -155,4 +156,48 @@ test('worker rejects a profile missing schema-required metadata', async ({ page 
   await page.goto(report(fixture, '--inline-limit-mib', '0'));
   await page.locator('input[type=file]').first().setInputFiles(input);
   await expect(page.getByRole('alert')).toContainText('Schema v1 validation failed');
+});
+
+test('objects view links types, instances, versions and routines, and Back returns', async ({ page }) => {
+  await page.route(/^https?:\/\//, route => route.abort());
+  const errors: string[] = [];
+  page.on('pageerror', error => errors.push(error.message));
+  await page.goto(report(objectsFixture));
+  await page.getByRole('navigation', { name: 'Views' }).getByRole('button', { name: /Objects$/ }).click();
+  await expect(page.getByRole('heading', { name: 'Objects', level: 1 })).toBeVisible();
+  await expect(page.getByRole('img', { name: 'Interactive object graph' })).toBeVisible();
+  await page.locator('.type-row').filter({ hasText: 'object_tracking::Cart' }).click();
+  await expect(page).toHaveURL(/type=/);
+  await expect(page.getByRole('heading', { name: 'Reads, writes and real changes' })).toBeVisible();
+  await page.locator('.instance-row').first().click();
+  await expect(page).toHaveURL(/instance=/);
+  await expect(page.getByRole('heading', { name: 'Version timeline' })).toBeVisible();
+  await expect(page.locator('.lineage')).toContainText('Clones');
+  await page.locator('.version-list .entity-span').first().click();
+  await expect(page.getByRole('heading', { name: 'Routines', level: 1 })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Objects touched' })).toBeVisible();
+  await page.goBack();
+  await expect(page.getByRole('heading', { name: 'Version timeline' })).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
+test('dependency graph selection follows the edge list and the theme toggle', async ({ page }) => {
+  await page.route(/^https?:\/\//, route => route.abort());
+  await page.goto(report(objectsFixture));
+  await page.getByRole('button', { name: 'Dependencies' }).click();
+  const graph = page.getByRole('img', { name: 'Interactive call relationship graph' });
+  await expect(graph).toBeVisible();
+  await expect(page.locator('.graph-backend')).toHaveText(/WebGL2|Canvas 2D/);
+  await page.locator('.edge-list button').first().click();
+  await expect(page).toHaveURL(/span=/);
+  await expect(page.getByRole('button', { name: /^Open .* →$/ })).toBeVisible();
+  await page.getByRole('button', { name: 'Toggle theme' }).click();
+  await expect(page.locator('html')).toHaveAttribute('data-theme', /light|dark/);
+  await expect(graph).toBeVisible();
+});
+
+test('a profile without objects explains how to enable tracking', async ({ page }) => {
+  await page.goto(report(fixture));
+  await page.getByRole('navigation', { name: 'Views' }).getByRole('button', { name: /Objects$/ }).click();
+  await expect(page.getByRole('heading', { name: 'No tracked objects in this profile' })).toBeVisible();
 });

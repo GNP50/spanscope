@@ -57,6 +57,9 @@ jobs:
       - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
         with:
           toolchain: stable
+          targets: wasm32-unknown-unknown
+      # skeinmap is installed from git and compiles its WebAssembly kernels during npm ci.
+      - run: cargo install wasm-bindgen-cli --version 0.2.100 --locked
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "22"

@@ -32,6 +32,7 @@
   "react-remove-scroll-bar",
   "react-style-singleton",
   "scheduler",
+  "skeinmap",
   "tslib",
   "use-callback-ref",
   "use-sidecar",

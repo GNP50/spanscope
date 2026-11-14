@@ -1,4 +1,5 @@
-import { asBigInt, asNumber, type ExactChain, type ExactSpan, type ProfileIndex } from './core';
+import { asBigInt, asNumber } from './format';
+import type { ExactChain, ExactSpan, ProfileIndex } from './types';
 
 export interface RoutineMeasurement {
   key: string;
