@@ -72,6 +72,31 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 You can also configure a program through `spanscope::config::init_from_args(std::env::args())`, which consumes `--spanscope-*` arguments and returns the remaining application arguments. Explicit builder values take precedence over `SPANSCOPE_*` environment variables, then defaults. Output formats are JSON, gzip JSON, and a text summary. Automatic flush is best effort at normal process exit; an explicit `flush()` reports errors and is the reliable choice. The [runtime guide](spanscope/README.md) lists settings and lifecycle details.
 
+## Track objects
+
+With the `object-tracking` feature, a function can record what it does to specific instances:
+
+```rust
+use spanscope::{trace, InstanceId, Tracked};
+
+#[derive(Tracked)]
+struct Cart {
+    #[tracked(id)] id: InstanceId, // or a domain key such as `u64` or `String`
+    items: Vec<Item>,              // `Item` derives `Tracked` too
+    total: u64,
+    #[tracked(skip)] scratch: Vec<u8>,
+}
+
+impl Cart {
+    #[trace(track(self))]
+    fn reprice(&mut self, sku: u64, price: u64) { /* ... */ }
+}
+```
+
+At compile time the macro adds a counter before every statement that reads, writes, borrows, or calls a method on a path of a tracked argument (`self.total`, `self.items[*].price`), with its source line. At run time it hashes each tracked argument as a tree, field by field, on entry and exit. The profile's `objects` section then reports, for each instance and function, how many calls it received, how many of them changed it, which paths changed, and its most recent versions; nested instances with their own `#[tracked(id)]` are attributed separately. `InstanceId` is ignored by equality and hashing, and a clone gets a new ID that records its origin. Without the feature, the derive generates nothing and `InstanceId` is zero-sized.
+
+Limits: tracked arguments must be references, and the function must not return borrowed data. Counters only see accesses written in the tracked function itself; changes made through aliases, called functions, or interior mutability are still detected by the hash comparison but are not attributed to a line. Instances without an ID field are keyed by address and marked approximate. Collections longer than 1024 elements are compared as a whole. `SPANSCOPE_MAX_OBJECTS` (default 10,000) and `SPANSCOPE_OBJECT_HISTORY` (default 64) bound memory. Hashing costs time proportional to the argument's size on every call, and tracking does not follow span sampling. Run `cargo run -p spanscope --features object-tracking --example object_tracking` for a complete example.
+
 ## Features and current limits
 
 | Feature | Effect |
@@ -83,6 +108,7 @@ You can also configure a program through `spanscope::config::init_from_args(std:
 | `alloc-tracker` | Adds an opt-in `TrackingAllocator` wrapper for gross allocation counts and requested bytes; the application must install it as its global allocator. |
 | `viewer` | With `SPANSCOPE_OPEN=1`, emits the offline HTML alongside a runtime-exported profile and asks the system to open it. |
 | `ml` | Reserved analysis boundary; no ML algorithms are implemented yet. |
+| `object-tracking` | Records field accesses and value changes of `#[derive(Tracked)]` instances passed to `#[trace(track(...))]` functions. Implies `enabled`. |
 
 The profile contains exact integer counters, but charts may use approximate floating-point coordinates for very large values. Root interval evidence can be partial or truncated; the flame graph and caller network are aggregates, **not an exact concurrent critical path**. The Timeline view only computes a longest path from explicit causal segments and labels incomplete evidence accordingly; the current runtime does not yet emit those dependency edges. The individual-call list only shows retained evidence. Deterministic insights describe observed evidence rather than proving a defect. ML remains planned. File reading, gzip decompression, validation, and indexing run in a worker, but the complete profile and index are still held in memory; the 50 MiB inline setting is a delivery threshold, not a tested capacity limit. Chromium browsers exposing the File System Access API also show **Live follow**, which reloads a selected profile when it changes. Synchronous instrumentation has not yet met the project's <50 ns median target.
 

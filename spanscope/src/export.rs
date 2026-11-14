@@ -256,6 +256,7 @@ impl<'a> ExportView<'a> {
             ("ml", cfg!(feature = "ml")),
             ("viewer", cfg!(feature = "viewer")),
             ("schema", cfg!(feature = "schema")),
+            ("object-tracking", cfg!(feature = "object-tracking")),
         ] {
             if on {
                 features.push(name.to_owned());
@@ -391,6 +392,139 @@ impl<'a> ExportView<'a> {
     }
 }
 
+#[cfg(feature = "object-tracking")]
+impl ExportView<'_> {
+    /// Converts object-tracking data, or `None` when nothing was tracked.
+    fn objects(&self) -> Option<profile::Objects> {
+        use crate::objects::{Access, InstanceKey, ObjectRef};
+        let objects = &self.snapshot.objects;
+        if objects.instances.is_empty() && objects.fields.is_empty() {
+            return None;
+        }
+        let span = |id: u32| self.old_to_new[id as usize];
+        let names = objects
+            .instances
+            .iter()
+            .map(|instance| instance.object.type_name)
+            .chain(objects.fields.iter().map(|field| field.type_name))
+            .chain(objects.sites.iter().map(|site| site.type_name))
+            .collect::<std::collections::BTreeSet<_>>();
+        let type_ids = names
+            .iter()
+            .enumerate()
+            .map(|(id, name)| (*name, id as u32))
+            .collect::<BTreeMap<_, _>>();
+        let instance_ids = objects
+            .instances
+            .iter()
+            .enumerate()
+            .map(|(id, instance)| (&instance.object, id as u32))
+            .collect::<BTreeMap<_, _>>();
+        let generated = objects
+            .instances
+            .iter()
+            .enumerate()
+            .filter_map(|(id, instance)| match instance.object.key {
+                InstanceKey::Generated(value) => Some((value, id as u32)),
+                _ => None,
+            })
+            .collect::<BTreeMap<_, _>>();
+        let lookup = |object: &Option<ObjectRef>| {
+            object
+                .as_ref()
+                .and_then(|object| instance_ids.get(object).copied())
+        };
+        let access = |access: Access| match access {
+            Access::Read => profile::AccessKind::Read,
+            Access::Write => profile::AccessKind::Write,
+            Access::Call => profile::AccessKind::Call,
+        };
+        Some(profile::Objects {
+            capture: profile::ObjectCapture {
+                max_instances: objects.max_instances as u64,
+                history_limit: objects.history_limit as u64,
+                dropped_instances: objects.dropped_instances,
+            },
+            types: type_ids
+                .iter()
+                .map(|(name, id)| profile::ObjectType {
+                    id: *id,
+                    name: (*name).to_owned(),
+                })
+                .collect(),
+            instances: objects
+                .instances
+                .iter()
+                .enumerate()
+                .map(|(id, instance)| profile::Instance {
+                    id: id as u32,
+                    type_id: type_ids[instance.object.type_name],
+                    key: instance.object.key.to_string(),
+                    key_kind: match instance.object.key {
+                        InstanceKey::Generated(_) => profile::KeyKind::Generated,
+                        InstanceKey::Domain(_) => profile::KeyKind::Domain,
+                        InstanceKey::Address(_) => profile::KeyKind::Address,
+                    },
+                    parent: lookup(&instance.parent),
+                    cloned_from: instance
+                        .cloned_from
+                        .and_then(|value| generated.get(&value).copied()),
+                    replaced_by: lookup(&instance.replaced_by),
+                    versions: instance.versions,
+                    calls: instance
+                        .calls
+                        .iter()
+                        .map(|calls| profile::InstanceCalls {
+                            span: span(calls.span),
+                            calls: calls.calls,
+                            changed_calls: calls.changed_calls,
+                            touches: calls.touches,
+                        })
+                        .collect(),
+                    field_changes: instance.field_changes.clone(),
+                    history: instance
+                        .history
+                        .iter()
+                        .map(|version| profile::Version {
+                            version: version.version,
+                            span: span(version.span),
+                            t_ns: version.t_ns,
+                            changed: version.changed.clone(),
+                            lines: version.lines.clone(),
+                        })
+                        .collect(),
+                    history_dropped: instance.history_dropped,
+                })
+                .collect(),
+            fields: objects
+                .fields
+                .iter()
+                .map(|field| profile::FieldStats {
+                    span: span(field.span),
+                    type_id: type_ids[field.type_name],
+                    path: field.path.clone(),
+                    reads: field.reads,
+                    writes: field.writes,
+                    calls: field.calls,
+                    changes: field.changes,
+                })
+                .collect(),
+            sites: objects
+                .sites
+                .iter()
+                .map(|site| profile::AccessSite {
+                    span: span(site.span),
+                    type_id: type_ids[site.type_name],
+                    path: site.path.to_owned(),
+                    access: access(site.access),
+                    line: site.line,
+                    count: site.count,
+                })
+                .collect(),
+        })
+    }
+}
+
 fn stats_from(chain: &ChainSnapshot) -> Stats {
     Stats {
         count: chain.count,
@@ -456,7 +590,12 @@ struct RootList<'a>(&'a ExportView<'a>);
 
 impl Serialize for ExportView<'_> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let mut output = serializer.serialize_struct("Profile", 8)?;
+        #[cfg(feature = "object-tracking")]
+        let objects = self.objects();
+        #[cfg(not(feature = "object-tracking"))]
+        let objects: Option<profile::Objects> = None;
+        let mut output =
+            serializer.serialize_struct("Profile", 8 + usize::from(objects.is_some()))?;
         output.serialize_field("schema_version", &crate::SCHEMA_VERSION)?;
         output.serialize_field("meta", &self.meta())?;
         output.serialize_field("spans", &SpanList(self))?;
@@ -480,6 +619,9 @@ impl Serialize for ExportView<'_> {
             "analysis",
             &crate::analysis::analyze(&self.spans, &self.chains, &self.graph),
         )?;
+        if let Some(objects) = &objects {
+            output.serialize_field("objects", objects)?;
+        }
         output.end()
     }
 }

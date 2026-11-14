@@ -1,0 +1,557 @@
+{
+  "schema_version": 1,
+  "meta": {
+    "program": "object_tracking",
+    "version": null,
+    "git_sha": null,
+    "host": {
+      "os": "macos",
+      "arch": "aarch64"
+    },
+    "started_at": "2026-11-14T15:50:31Z",
+    "duration_ns": 24155167,
+    "threads": 1,
+    "features": [
+      "enabled",
+      "object-tracking",
+      "serialization"
+    ],
+    "capture": {
+      "sample_rate": 1.0,
+      "sampled_out_roots": 0,
+      "evicted_roots": 0,
+      "dropped_records": 0,
+      "snapshot_complete": true,
+      "pending_threads": [],
+      "rss_supported": false
+    }
+  },
+  "spans": [
+    {
+      "id": 0,
+      "name": "object_tracking::reprice",
+      "file": "spanscope/examples/object_tracking.rs",
+      "line": 25,
+      "tags": []
+    },
+    {
+      "id": 1,
+      "name": "object_tracking::audit",
+      "file": "spanscope/examples/object_tracking.rs",
+      "line": 34,
+      "tags": []
+    }
+  ],
+  "chains": [
+    {
+      "id": 0,
+      "path": [
+        0
+      ],
+      "count": 20,
+      "total_ns": 1309376,
+      "min_ns": 13708,
+      "max_ns": 454083,
+      "mean_ns": 65468.8,
+      "std_ns": 95924.56054765118,
+      "m2_ns2": 184030426325.19998,
+      "p50_ns": 36864,
+      "p90_ns": 110592,
+      "p99_ns": 454083,
+      "self_ns": 1309376,
+      "self_time_kind": "synchronous",
+      "active_ns": 1309376,
+      "poll_count": 0,
+      "cancelled": 0,
+      "alloc_bytes": 0,
+      "allocs": 0,
+      "histogram": {
+        "algorithm": "log2_16",
+        "precision": "exact through 16 ns; above 16 ns, inclusive bucket width is 1/16 of the containing power-of-two interval; quantiles are bucket upper bounds clamped to observed min/max",
+        "buckets": [
+          {
+            "upper_ns": 13824,
+            "count": 2
+          },
+          {
+            "upper_ns": 14336,
+            "count": 2
+          },
+          {
+            "upper_ns": 14848,
+            "count": 1
+          },
+          {
+            "upper_ns": 22528,
+            "count": 1
+          },
+          {
+            "upper_ns": 29696,
+            "count": 1
+          },
+          {
+            "upper_ns": 30720,
+            "count": 2
+          },
+          {
+            "upper_ns": 36864,
+            "count": 1
+          },
+          {
+            "upper_ns": 38912,
+            "count": 3
+          },
+          {
+            "upper_ns": 43008,
+            "count": 1
+          },
+          {
+            "upper_ns": 69632,
+            "count": 1
+          },
+          {
+            "upper_ns": 77824,
+            "count": 2
+          },
+          {
+            "upper_ns": 110592,
+            "count": 1
+          },
+          {
+            "upper_ns": 163840,
+            "count": 1
+          },
+          {
+            "upper_ns": 458752,
+            "count": 1
+          }
+        ]
+      }
+    },
+    {
+      "id": 1,
+      "path": [
+        1
+      ],
+      "count": 10,
+      "total_ns": 141708,
+      "min_ns": 9167,
+      "max_ns": 26625,
+      "mean_ns": 14170.8,
+      "std_ns": 6203.554397279031,
+      "m2_ns2": 384840871.6,
+      "p50_ns": 9728,
+      "p90_ns": 20480,
+      "p99_ns": 26625,
+      "self_ns": 141708,
+      "self_time_kind": "synchronous",
+      "active_ns": 141708,
+      "poll_count": 0,
+      "cancelled": 0,
+      "alloc_bytes": 0,
+      "allocs": 0,
+      "histogram": {
+        "algorithm": "log2_16",
+        "precision": "exact through 16 ns; above 16 ns, inclusive bucket width is 1/16 of the containing power-of-two interval; quantiles are bucket upper bounds clamped to observed min/max",
+        "buckets": [
+          {
+            "upper_ns": 9216,
+            "count": 1
+          },
+          {
+            "upper_ns": 9728,
+            "count": 4
+          },
+          {
+            "upper_ns": 10240,
+            "count": 1
+          },
+          {
+            "upper_ns": 19456,
+            "count": 1
+          },
+          {
+            "upper_ns": 20480,
+            "count": 2
+          },
+          {
+            "upper_ns": 27648,
+            "count": 1
+          }
+        ]
+      }
+    }
+  ],
+  "graph": {
+    "nodes": [
+      {
+        "span": 0,
+        "total_ns": 1309376,
+        "self_ns": 1309376,
+        "calls": 20
+      },
+      {
+        "span": 1,
+        "total_ns": 141708,
+        "self_ns": 141708,
+        "calls": 10
+      }
+    ],
+    "edges": []
+  },
+  "roots": [],
+  "threads": [
+    {
+      "id": 0,
+      "name": "main",
+      "busy_ns": 1451084,
+      "exited": true
+    }
+  ],
+  "analysis": {
+    "status": "complete",
+    "insights": [
+      {
+        "kind": "hotspot.self_time",
+        "severity": "critical",
+        "title": "object_tracking::reprice concentrates active self time",
+        "explanation": "This routine accounts for 90.2% of observed exclusive active time across instrumented chains.",
+        "evidence": {
+          "chains": [
+            0
+          ],
+          "roots": [],
+          "spans": [
+            0
+          ]
+        },
+        "data": {
+          "calls": 20,
+          "matching_chains": 1,
+          "self_ns": 1309376,
+          "share": 0.9023433515909486,
+          "total_self_ns": 1451084
+        }
+      },
+      {
+        "kind": "latency.long_tail",
+        "severity": "critical",
+        "title": "object_tracking::reprice has a long latency tail",
+        "explanation": "Its approximate p99 is 12.3\u00d7 its median across 20 observations.",
+        "evidence": {
+          "chains": [
+            0
+          ],
+          "roots": [],
+          "spans": [
+            0
+          ]
+        },
+        "data": {
+          "calls": 20,
+          "p50_ns": 36864,
+          "p99_ns": 454083,
+          "ratio": 12.317789713541666
+        }
+      },
+      {
+        "kind": "latency.high_variance",
+        "severity": "warning",
+        "title": "object_tracking::reprice has high duration variance",
+        "explanation": "The standard deviation is 1.5\u00d7 the observed mean across 20 calls.",
+        "evidence": {
+          "chains": [
+            0
+          ],
+          "roots": [],
+          "spans": [
+            0
+          ]
+        },
+        "data": {
+          "calls": 20,
+          "coefficient_of_variation": 1.4651950325598022,
+          "mean_ns": 65468.8,
+          "std_ns": 95924.56054765118
+        }
+      }
+    ],
+    "sections": {
+      "deterministic_diagnostics": {
+        "status": "complete",
+        "explanation": "Bounded rule-based diagnostics computed from observed aggregate evidence; severity is presentation priority, not probability.",
+        "data": {
+          "algorithm": "deterministic-v1",
+          "thresholds": {
+            "allocation_min_bytes": 1024,
+            "allocation_min_share": 0.2,
+            "cancellation_min_calls": 10,
+            "cancellation_min_rate": 0.05,
+            "fanout_min_callees": 8,
+            "high_variance_min_calls": 20,
+            "high_variance_min_coefficient": 1.0,
+            "hotspot_min_share": 0.15,
+            "long_tail_min_calls": 20,
+            "long_tail_min_ratio": 4.0,
+            "long_tail_min_spread_ns": 1000,
+            "max_insights_per_kind": 3
+          }
+        }
+      }
+    }
+  },
+  "objects": {
+    "capture": {
+      "max_instances": 10000,
+      "history_limit": 64,
+      "dropped_instances": 0
+    },
+    "types": [
+      {
+        "id": 0,
+        "name": "object_tracking::Cart"
+      },
+      {
+        "id": 1,
+        "name": "object_tracking::Item"
+      }
+    ],
+    "instances": [
+      {
+        "id": 0,
+        "type_id": 0,
+        "key": "#1",
+        "key_kind": "generated",
+        "parent": null,
+        "cloned_from": null,
+        "replaced_by": null,
+        "versions": 9,
+        "calls": [
+          {
+            "span": 0,
+            "calls": 10,
+            "changed_calls": 9,
+            "touches": 40
+          },
+          {
+            "span": 1,
+            "calls": 10,
+            "changed_calls": 0,
+            "touches": 10
+          }
+        ],
+        "field_changes": {
+          "items": 9,
+          "items[*]": 9,
+          "items[*].price": 9,
+          "total": 9
+        },
+        "history": [
+          {
+            "version": 8,
+            "span": 0,
+            "t_ns": 1688167,
+            "changed": [
+              "items",
+              "items[*]",
+              "items[*].price",
+              "total"
+            ],
+            "lines": [
+              27,
+              30,
+              31
+            ]
+          },
+          {
+            "version": 9,
+            "span": 0,
+            "t_ns": 1749542,
+            "changed": [
+              "items",
+              "items[*]",
+              "items[*].price",
+              "total"
+            ],
+            "lines": [
+              27,
+              30,
+              31
+            ]
+          }
+        ],
+        "history_dropped": 7
+      },
+      {
+        "id": 1,
+        "type_id": 0,
+        "key": "#2",
+        "key_kind": "generated",
+        "parent": null,
+        "cloned_from": null,
+        "replaced_by": null,
+        "versions": 0,
+        "calls": [
+          {
+            "span": 0,
+            "calls": 10,
+            "changed_calls": 0,
+            "touches": 40
+          }
+        ],
+        "field_changes": {},
+        "history": [],
+        "history_dropped": 0
+      },
+      {
+        "id": 2,
+        "type_id": 1,
+        "key": "1",
+        "key_kind": "domain",
+        "parent": 0,
+        "cloned_from": null,
+        "replaced_by": null,
+        "versions": 9,
+        "calls": [
+          {
+            "span": 0,
+            "calls": 0,
+            "changed_calls": 9,
+            "touches": 0
+          }
+        ],
+        "field_changes": {
+          "price": 9
+        },
+        "history": [
+          {
+            "version": 8,
+            "span": 0,
+            "t_ns": 1688167,
+            "changed": [
+              "price"
+            ],
+            "lines": []
+          },
+          {
+            "version": 9,
+            "span": 0,
+            "t_ns": 1749542,
+            "changed": [
+              "price"
+            ],
+            "lines": []
+          }
+        ],
+        "history_dropped": 7
+      }
+    ],
+    "fields": [
+      {
+        "span": 0,
+        "type_id": 0,
+        "path": "items",
+        "reads": 0,
+        "writes": 0,
+        "calls": 40,
+        "changes": 9
+      },
+      {
+        "span": 0,
+        "type_id": 0,
+        "path": "items[*]",
+        "reads": 0,
+        "writes": 0,
+        "calls": 0,
+        "changes": 9
+      },
+      {
+        "span": 0,
+        "type_id": 0,
+        "path": "items[*].price",
+        "reads": 0,
+        "writes": 0,
+        "calls": 0,
+        "changes": 9
+      },
+      {
+        "span": 0,
+        "type_id": 0,
+        "path": "scratch",
+        "reads": 0,
+        "writes": 0,
+        "calls": 20,
+        "changes": 0
+      },
+      {
+        "span": 0,
+        "type_id": 0,
+        "path": "total",
+        "reads": 0,
+        "writes": 20,
+        "calls": 0,
+        "changes": 9
+      },
+      {
+        "span": 0,
+        "type_id": 1,
+        "path": "price",
+        "reads": 0,
+        "writes": 0,
+        "calls": 0,
+        "changes": 9
+      },
+      {
+        "span": 1,
+        "type_id": 0,
+        "path": "total",
+        "reads": 10,
+        "writes": 0,
+        "calls": 0,
+        "changes": 0
+      }
+    ],
+    "sites": [
+      {
+        "span": 0,
+        "type_id": 0,
+        "path": "items",
+        "access": "call",
+        "line": 27,
+        "count": 20
+      },
+      {
+        "span": 0,
+        "type_id": 0,
+        "path": "items",
+        "access": "call",
+        "line": 30,
+        "count": 20
+      },
+      {
+        "span": 0,
+        "type_id": 0,
+        "path": "scratch",
+        "access": "call",
+        "line": 31,
+        "count": 20
+      },
+      {
+        "span": 0,
+        "type_id": 0,
+        "path": "total",
+        "access": "write",
+        "line": 30,
+        "count": 20
+      },
+      {
+        "span": 1,
+        "type_id": 0,
+        "path": "total",
+        "access": "read",
+        "line": 36,
+        "count": 10
+      }
+    ]
+  }
+}

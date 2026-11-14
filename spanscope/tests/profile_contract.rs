@@ -9,6 +9,7 @@ fn fixtures_round_trip_without_losing_fields_or_integer_precision() {
         include_str!("fixtures/nested.json"),
         include_str!("fixtures/async-partial.json"),
         include_str!("fixtures/large-integer.json"),
+        include_str!("fixtures/objects.json"),
     ] {
         let original: serde_json::Value = serde_json::from_str(fixture).unwrap();
         let profile: Profile = serde_json::from_str(fixture).unwrap();

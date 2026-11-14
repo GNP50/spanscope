@@ -28,6 +28,9 @@ pub struct Profile {
     pub threads: Vec<Thread>,
     /// Analysis results and explicit completion state.
     pub analysis: Analysis,
+    /// Object-tracking results; absent unless the `object-tracking` feature recorded data.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub objects: Option<Objects>,
 }
 
 /// Capture metadata with explicit data-quality information.
@@ -456,4 +459,166 @@ pub struct Evidence {
     pub roots: Vec<String>,
     /// Span IDs supporting the insight.
     pub spans: Vec<u32>,
+}
+
+/// Tracked instances, field counters, and access sites from `#[trace(track(...))]`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct Objects {
+    /// Retention limits and losses.
+    pub capture: ObjectCapture,
+    /// Tracked types, sorted by name.
+    pub types: Vec<ObjectType>,
+    /// Observed instances, sorted by type and key.
+    pub instances: Vec<Instance>,
+    /// Per-function counters for each path of each type.
+    pub fields: Vec<FieldStats>,
+    /// Execution counts of individual source access sites.
+    pub sites: Vec<AccessSite>,
+}
+
+/// Object-tracking retention limits.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct ObjectCapture {
+    /// Maximum retained instances (`SPANSCOPE_MAX_OBJECTS`).
+    pub max_instances: u64,
+    /// Maximum retained versions per instance (`SPANSCOPE_OBJECT_HISTORY`).
+    pub history_limit: u64,
+    /// Instances first seen after the limit was reached; their calls are not counted.
+    pub dropped_instances: u64,
+}
+
+/// A type that derives `Tracked`, or the Rust type of a tracked argument.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct ObjectType {
+    /// Profile-local type identifier.
+    pub id: u32,
+    /// Module-qualified type name.
+    pub name: String,
+}
+
+/// How an instance is identified.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub enum KeyKind {
+    /// Number allocated by `InstanceId`.
+    Generated,
+    /// Application key from a `#[tracked(id)]` field.
+    Domain,
+    /// Memory address; approximate, because moves change it and addresses are reused.
+    Address,
+}
+
+/// One observed instance and its history.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct Instance {
+    /// Profile-local instance identifier.
+    pub id: u32,
+    /// Type ID.
+    pub type_id: u32,
+    /// Display key, unique within the type.
+    pub key: String,
+    /// Origin of the key.
+    pub key_kind: KeyKind,
+    /// Instance that contained this one when it last changed.
+    pub parent: Option<u32>,
+    /// Instance this one was cloned from, when both were observed.
+    pub cloned_from: Option<u32>,
+    /// Instance that replaced this one in place during a tracked call.
+    pub replaced_by: Option<u32>,
+    /// Number of observed value changes.
+    pub versions: u64,
+    /// Per-function counters.
+    pub calls: Vec<InstanceCalls>,
+    /// Change count per path relative to the instance; `[*]` stands for any index or key.
+    pub field_changes: BTreeMap<String, u64>,
+    /// Most recent version transitions, oldest first.
+    pub history: Vec<Version>,
+    /// Transitions evicted from the bounded history.
+    pub history_dropped: u64,
+}
+
+/// One instance's counters for one function.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct InstanceCalls {
+    /// Span ID of the function.
+    pub span: u32,
+    /// Calls that received this instance as a tracked argument.
+    pub calls: u64,
+    /// Calls after which this instance's value differed, directly or as a nested instance.
+    pub changed_calls: u64,
+    /// Executed access sites on this instance.
+    pub touches: u64,
+}
+
+/// One retained version transition.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct Version {
+    /// Version number after the change, starting at 1.
+    pub version: u64,
+    /// Span ID of the call that produced it.
+    pub span: u32,
+    /// Capture-relative time when the call returned.
+    pub t_ns: u64,
+    /// Changed paths relative to the instance, at most 32.
+    pub changed: Vec<String>,
+    /// Source lines of write and call sites executed during the call.
+    pub lines: Vec<u32>,
+}
+
+/// Counters for one path of one type within one function.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct FieldStats {
+    /// Span ID of the function.
+    pub span: u32,
+    /// Type ID.
+    pub type_id: u32,
+    /// Path relative to the type; empty for the whole value.
+    pub path: String,
+    /// Executed read sites.
+    pub reads: u64,
+    /// Executed write sites.
+    pub writes: u64,
+    /// Executed method-call sites; the method may or may not mutate.
+    pub calls: u64,
+    /// Calls after which the value at this path differed.
+    pub changes: u64,
+}
+
+/// How a path was reached in source.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub enum AccessKind {
+    /// Read without a mutable borrow.
+    Read,
+    /// Assigned, compound-assigned, or borrowed mutably.
+    Write,
+    /// Method receiver, or the whole argument passed on.
+    Call,
+}
+
+/// Execution count of one source access site.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct AccessSite {
+    /// Span ID of the function.
+    pub span: u32,
+    /// Type ID of the tracked argument.
+    pub type_id: u32,
+    /// Path relative to the argument.
+    pub path: String,
+    /// Access kind.
+    pub access: AccessKind,
+    /// One-based source line.
+    pub line: u32,
+    /// Executions.
+    pub count: u64,
 }

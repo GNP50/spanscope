@@ -111,6 +111,27 @@ def validate_relations(profile):
                 if degrees[target] == 0:
                     ready.append(target)
         require(visited == len(segments), "causal segments contain a cycle")
+    objects = profile.get("objects")
+    if objects is not None:
+        types = keyed(objects["types"], "id")
+        instances = keyed(objects["instances"], "id")
+        identities = [(instance["type_id"], instance["key"]) for instance in instances.values()]
+        require(len(set(identities)) == len(identities), "duplicate instance identity")
+        for instance in instances.values():
+            require(instance["type_id"] in types, "instance references missing type")
+            for relation in ("parent", "cloned_from", "replaced_by"):
+                require(instance[relation] is None or instance[relation] in instances, f"missing {relation} instance")
+            for calls in instance["calls"]:
+                require(calls["span"] in spans, "instance calls reference missing span")
+                require(calls["changed_calls"] <= calls["calls"] or calls["calls"] == 0, "more changed calls than calls")
+            versions = [version["version"] for version in instance["history"]]
+            require(versions == sorted(set(versions)) and all(v <= instance["versions"] for v in versions), "invalid version history")
+            require(len(versions) <= objects["capture"]["history_limit"], "history exceeds limit")
+            for version in instance["history"]:
+                require(version["span"] in spans, "version references missing span")
+        require(len(instances) <= objects["capture"]["max_instances"], "instances exceed limit")
+        for record in objects["fields"] + objects["sites"]:
+            require(record["span"] in spans and record["type_id"] in types, "object counter references missing span or type")
     for insight in profile["analysis"]["insights"]:
         evidence = insight["evidence"]
         require(set(evidence["spans"]) <= spans.keys(), "invalid insight span")
