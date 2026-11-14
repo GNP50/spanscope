@@ -12,6 +12,7 @@ function metric(key: string, value: unknown): string | null {
   if (key.endsWith('_bytes')) return formatBytes(value);
   if ((key === 'share' || key === 'rate') && typeof value === 'number') return `${(value * 100).toFixed(1)}%`;
   if ((key === 'ratio' || key === 'coefficient_of_variation') && typeof value === 'number') return `${value.toFixed(1)}×`;
+  if (typeof value === 'number' && !Number.isInteger(value)) return value.toFixed(2);
   return formatInteger(value);
 }
 

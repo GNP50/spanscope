@@ -46,6 +46,8 @@ pub mod config;
 pub mod export;
 #[cfg(feature = "viewer")]
 mod host_viewer;
+#[cfg(feature = "ml")]
+mod ml;
 #[cfg(feature = "enabled")]
 mod runtime;
 #[cfg(feature = "enabled")]

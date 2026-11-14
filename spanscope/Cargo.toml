@@ -59,6 +59,10 @@ name = "recursion"
 required-features = ["enabled"]
 
 [[example]]
+name = "ml_patterns"
+required-features = ["ml", "object-tracking"]
+
+[[example]]
 name = "object_tracking"
 required-features = ["object-tracking"]
 

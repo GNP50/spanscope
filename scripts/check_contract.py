@@ -152,7 +152,7 @@ def main():
     Draft7Validator.check_schema(schema)
     validator = Draft7Validator(schema)
     fixtures = sorted((ROOT / "spanscope" / "tests" / "fixtures").glob("*.json"))
-    fixtures.append(ROOT / "viewer" / "fixtures" / "example.json")
+    fixtures.extend(sorted((ROOT / "viewer" / "fixtures").glob("*.json")))
     for fixture in fixtures:
         profile = json.loads(fixture.read_text())
         validator.validate(profile)

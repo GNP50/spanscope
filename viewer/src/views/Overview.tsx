@@ -67,6 +67,9 @@ export function Overview({ index, chains }: { index: ProfileIndex; chains: Exact
     { view: 'insights' as const, title: 'What deserves attention?', detail: `${index.profile.analysis.insights.length} deterministic insights →` },
     { view: 'routines' as const, title: 'Which routine costs most?', detail: 'Calls, self weight, callers and children →' },
     { view: 'runs' as const, title: 'What happened in one run?', detail: 'Per-run composition and metrics →' },
+    ...(index.profile.analysis.sections.clusters
+      ? [{ view: 'patterns' as const, title: 'Which runs behave differently?', detail: 'Shapes, outliers, shifts and growth →' }]
+      : []),
     { view: 'dependencies' as const, title: 'Who calls whom?', detail: 'Interactive graph and direct edges →' },
     ...(objects
       ? [{ view: 'objects' as const, title: 'What changed which object?', detail: `${objects.instances.size} tracked instances →` }]

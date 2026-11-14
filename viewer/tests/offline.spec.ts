@@ -10,6 +10,7 @@ const root = resolve(import.meta.dirname, '../..');
 const fixture = resolve(root, 'viewer/fixtures/example.json');
 const causalFixture = resolve(root, 'spanscope/tests/fixtures/async-partial.json');
 const objectsFixture = resolve(root, 'viewer/fixtures/objects.json');
+const patternsFixture = resolve(root, 'viewer/fixtures/patterns.json');
 const cli = resolve(root, 'target/debug/cargo-spanscope');
 function report(profile: string, ...args: string[]) {
   const dir = mkdtempSync(join(tmpdir(), 'spanscope-e2e-'));
@@ -200,4 +201,27 @@ test('a profile without objects explains how to enable tracking', async ({ page 
   await page.goto(report(fixture));
   await page.getByRole('navigation', { name: 'Views' }).getByRole('button', { name: /Objects$/ }).click();
   await expect(page.getByRole('heading', { name: 'No tracked objects in this profile' })).toBeVisible();
+});
+
+test('patterns view shows run shapes, outliers and shifts linked to runs', async ({ page }) => {
+  await page.route(/^https?:\/\//, route => route.abort());
+  const errors: string[] = [];
+  page.on('pageerror', error => errors.push(error.message));
+  await page.goto(report(patternsFixture));
+  await page.getByRole('navigation', { name: 'Views' }).getByRole('button', { name: /Patterns$/ }).click();
+  await expect(page.getByRole('img', { name: 'Run durations by shape, outliers and level shifts' })).toBeVisible();
+  await expect(page.locator('.shape-card')).toHaveCount(await page.locator('.shape-card').count());
+  expect(await page.locator('.shape-card').count()).toBeGreaterThanOrEqual(2);
+  await expect(page.getByRole('heading', { name: 'When run duration shifted' })).toBeVisible();
+  await page.locator('.pattern-list .entity-root').first().click();
+  await expect(page.getByRole('heading', { name: 'Runs & metrics', level: 1 })).toBeVisible();
+  await page.getByRole('button', { name: 'Insights' }).click();
+  await expect(page.locator('.insight-card').filter({ hasText: 'distinct shapes' })).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
+test('profiles without ml analysis explain how to enable it', async ({ page }) => {
+  await page.goto(report(fixture));
+  await page.getByRole('navigation', { name: 'Views' }).getByRole('button', { name: /Patterns$/ }).click();
+  await expect(page.getByRole('heading', { name: 'No pattern analysis in this profile' })).toBeVisible();
 });
