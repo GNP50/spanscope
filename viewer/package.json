@@ -14,7 +14,7 @@
   },
   "dependencies": {
     "@radix-ui/react-dialog": "^1.3.1",
-    "@tailwindcss/vite": "^4.3.4",
+    "@tailwindcss/vite": "^4.3.5",
     "@tanstack/react-table": "^8.21.0",
     "@tanstack/react-virtual": "^3.14.26",
     "ajv": "^8.20.0",
@@ -23,7 +23,7 @@
     "react-dom": "^19.3.1",
     "skeinmap": "github:GNP50/skeinmap#dbebb99fc5750281b1ad000b0843b9caee6dae72",
     "tailwindcss": "^4.1.0",
-    "zustand": "^5.0.16"
+    "zustand": "^5.1.0"
   },
   "devDependencies": {
     "@playwright/test": "^1.65.0",
@@ -33,7 +33,7 @@
     "@vitejs/plugin-react": "^5.1.0",
     "json-schema-to-typescript": "^15.0.0",
     "typescript": "^5.9.0",
-    "vite": "^7.3.7",
+    "vite": "^7.3.8",
     "vitest": "^5.1.0"
   }
 }
