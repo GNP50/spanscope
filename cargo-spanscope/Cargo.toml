@@ -1,0 +1,25 @@
+[package]
+name = "cargo-spanscope"
+description = "Offline report command for spanscope execution profiles"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme = "README.md"
+include = ["src/**", "assets/**", "Cargo.toml", "README.md", "LICENSE-*"]
+
+[dependencies]
+spanscope = { path = "../spanscope", version = "=0.1.0", default-features = false, features = ["serialization"] }
+serde_json.workspace = true
+flate2 = "1.1.4"
+
+[lints]
+workspace = true
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]

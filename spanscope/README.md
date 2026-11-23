@@ -1,0 +1,105 @@
+# spanscope
+
+Runtime facade, collector, and profile schema v1. Default features leave
+tracing disabled. With `enabled`, `#[trace]`, `span!`, `metric!`, `attribute!`,
+and `outcome!` collect
+synchronous and async call chains, bounded root snapshots and per-thread
+aggregates. Async bodies are traced only after their first poll; their context is
+installed for each poll and removed before suspension.
+
+`attribute!("request.kind", value)` attaches bounded string context to active
+roots and `outcome!("ok")` records the application-defined result. Each root
+keeps at most 64 attributes; values are truncated to 1024 UTF-8 bytes and the
+outcome to 128 bytes. Repeated keys keep their last value.
+
+`spanscope::context::propagate()` captures logical ancestry and root identity.
+Use `handle.attach()` in a synchronous worker scope or `handle.wrap(future)`
+for a spawned future. A root retained while a propagation handle or attached
+child remains outstanding is marked incomplete. `snapshot()` shows completed
+published observations; sleeping threads may appear in `pending_threads`.
+
+With `memory`, Linux roots sample process RSS at entry and exit. With
+`alloc-tracker`, applications can explicitly install:
+
+```rust
+#[global_allocator]
+static ALLOC: spanscope::TrackingAllocator<std::alloc::System> =
+    spanscope::TrackingAllocator::new(std::alloc::System);
+```
+
+The wrapper is never installed automatically. Once installed, every chain
+reports a heap balance in its optional `memory` section, and every root its
+own: bytes allocated and freed directly and including children, the net
+change per call (positive values mean memory still alive after return), the
+per-call high-water mark above the entry level with a histogram and
+p50/p90/p99, and the number of calls that retained memory. A deallocation is
+charged to the span that frees the block; a reallocation counts as allocating
+the new size and then freeing the old one. Sizes are requested bytes, not
+allocator block sizes. Export adds `memory.retention`, `memory.peak`,
+`memory.churn`, and `memory.peak_variance` insights, and the text report a
+heap table. The `memory_profile` example generates
+`viewer/fixtures/memory.json`. Runnable `tokio_tasks`,
+`rayon_workers`, `recursion`, and `export_profile` examples show usage.
+
+With `memo`, `#[memo]` caches results of pure functions, independently of
+`enabled`; see `spanscope::memo` for keys (`MemoKey`), limits, the `toggle`
+and `verify` switches, and per-instance `Cache` fields. With both features,
+export adds per-function counters in the profile's `memo.functions`.
+`#[trace(memo_probe)]` (only `enabled` needed) fingerprints arguments and
+results and reports memoization candidates in `memo.probes` and insights. The `memo`
+example and the `memo_hit` benchmark show usage and the cost of a hit.
+
+To write a profile, initialize before the first span and flush after workers join:
+
+```rust,no_run
+use spanscope::config::{ConfigBuilder, OutputFormat};
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    ConfigBuilder::new()
+        .output("profile.json.gz")
+        .format(OutputFormat::Gzip)
+        .auto_flush(false)
+        .init()?;
+    // Run instrumented application work, then join its workers.
+    spanscope::export::flush()?;
+    Ok(())
+}
+```
+
+`ConfigBuilder::init` is required for file output. It resolves builder values
+over `SPANSCOPE_*` environment values over defaults. Supported keys are
+`OUTPUT`, `FORMAT` (`json`, `gzip`, `text`), `SAMPLE_RATE`, `MAX_ROOTS`,
+`AUTO_FLUSH`, `OVERWRITE`, `PROGRAM`, `VERSION`, and `GIT_SHA`.
+`init_from_args(args)` recognizes the corresponding `--spanscope-*` flags and
+returns application arguments unchanged. Automatic flush defaults to on after
+explicit initialization and is best effort at normal process exit only. Explicit
+flush returns I/O errors and is the reliable path. Flushes replace the file
+atomically by default; `overwrite(false)` refuses an existing destination.
+
+JSON and gzip arrays are serialized incrementally through a buffered writer.
+Stable descriptor and chain IDs are assigned at export time after sorting;
+root UUIDs and timings remain specific to each run. `snapshot_complete` reports
+thread acknowledgement, while active invocations are still excluded. Root
+interval evidence is `partial` or `truncated`: dependency edges are not yet
+captured by this runtime, so exact concurrent critical paths cannot be inferred
+from a native capture. The viewer computes a bounded longest path when an
+imported schema-v1 profile contains explicit segments and dependencies. Export computes
+bounded deterministic diagnostics for self-time hotspots, long tails, high
+variance, cancellations, allocation concentration, and high call-graph fanout.
+The text report shows aggregate chains and capture quality.
+
+The `export_profile` example generates `viewer/fixtures/example.json`, which is
+validated against `schema/profile-v1.schema.json`. With the `viewer` feature,
+`SPANSCOPE_OPEN=1` also emits a neighboring offline HTML report and asks the
+platform opener to display it. Without that feature the flush still writes the
+profile and prints an actionable diagnostic. Run
+`scripts/benchmark_sync.sh` to record host details and Criterion distributions.
+The measured warmed synchronous instrumentation cost is about 151 ns on the
+development i7-7700, above the <50 ns goal; optimization remains open.
+
+Version 0.1.0 is an early release. Add
+`spanscope = { version = "0.1.0", features = ["enabled"] }` to instrument an
+application. Requires Rust 1.80 or later. Runtime causal-edge capture and ML
+analysis are not yet implemented; the `ml` feature is reserved for future work.
+
+Licensed under MIT OR Apache-2.0; both license texts are included in this package.

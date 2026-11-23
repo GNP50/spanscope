@@ -1,0 +1,5 @@
+error: name must be a string literal
+ --> tests/ui/fail_args.rs:1:27
+  |
+1 | #[spanscope::trace(name = 42)]
+  |                           ^^

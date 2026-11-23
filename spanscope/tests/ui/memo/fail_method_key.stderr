@@ -1,0 +1,5 @@
+error: methods need an explicit key = (...) with global scope: the receiver is never part of the default key
+ --> tests/ui/memo/fail_method_key.rs:5:14
+  |
+5 |     fn value(&self, input: u32) -> u32 {
+  |              ^^^^^

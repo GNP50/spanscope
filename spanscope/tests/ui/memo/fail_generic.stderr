@@ -1,0 +1,5 @@
+error: memo does not support generic functions: one static cache cannot hold every instantiation; memoize a concrete wrapper instead
+ --> tests/ui/memo/fail_generic.rs:2:13
+  |
+2 | fn identity<T: Clone>(value: T) -> T {
+  |             ^^^^^^^^

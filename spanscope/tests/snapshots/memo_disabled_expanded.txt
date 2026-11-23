@@ -1,0 +1,3 @@
+const fn unchanged_memo(value: u32) -> u32 {
+    value * 2
+}

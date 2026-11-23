@@ -1,0 +1,5 @@
+error: `&mut` arguments cannot be part of the key; exclude them with key = (...) and make sure they do not affect the result
+ --> tests/ui/memo/fail_mut_ref.rs:2:9
+  |
+2 | fn push(values: &mut Vec<u32>, value: u32) -> usize {
+  |         ^^^^^^^^^^^^^^^^^^^^^

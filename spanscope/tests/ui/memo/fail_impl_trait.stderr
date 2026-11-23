@@ -1,0 +1,5 @@
+error: memo does not support `impl Trait` arguments: they make the function generic
+ --> tests/ui/memo/fail_impl_trait.rs:2:18
+  |
+2 | fn total(values: impl Iterator<Item = u32>) -> u32 {
+  |                  ^^^^

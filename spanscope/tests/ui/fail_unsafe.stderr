@@ -1,0 +1,5 @@
+error: unsafe fn instrumentation is not supported; use a safe wrapper or manual span
+ --> tests/ui/fail_unsafe.rs:2:1
+  |
+2 | unsafe fn value() -> u32 {
+  | ^^^^^^

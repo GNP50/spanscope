@@ -1,0 +1,5 @@
+error: memo does not support async fn; memoize a synchronous helper instead
+ --> tests/ui/memo/fail_async.rs:2:1
+  |
+2 | async fn fetch(value: u32) -> u32 {
+  | ^^^^^

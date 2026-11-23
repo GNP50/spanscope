@@ -1,0 +1,197 @@
+# spanscope
+
+[![GitHub stars](https://img.shields.io/github/stars/GNP50/spanscope?style=social)](https://github.com/GNP50/spanscope/stargazers)
+
+`spanscope` instruments Rust functions and exports execution profiles that you can explore in a self-contained, offline HTML report. It records synchronous and async spans, call chains, root invocations, timings, optional memory information, and evidence-backed deterministic diagnostics. The repository contains the runtime crate, proc macro, report CLI, viewer source, and profile schema.
+
+Version 0.1.0 is an early release. The profiler and report CLI are usable; runtime causal-edge capture, ML analysis and fully streaming large-profile parsing are still in development. Rust 1.80 or newer is required.
+
+## Try the report
+
+From a checkout of this repository:
+
+```sh
+cargo run -p spanscope --features enabled --example export_profile -- \
+  --spanscope-output profile.json --spanscope-auto-flush false --explicit
+cargo run -p cargo-spanscope -- profile.json --output report
+```
+
+Open `report/index.html` directly in a modern browser. The example performs instrumented work and writes a real schema-v1 profile. The report works over `file://`; it does not need a web server or a network connection. Start with **Insights** for evidence-backed diagnostics covering hotspots, tail latency, variance, cancellations, allocations, and graph fanout. **Routines** shows observed call counts, exclusive active cost, inclusive wall sums, direct callers, callees, full paths, and copyable source locations. **Compare** loads an earlier baseline and highlights self-time, p99, call-count, and allocation deltas. **Timeline** shows retained intervals by thread and computes a longest observed path only from explicit causal evidence. **Runs & metrics** breaks down one root invocation, including its attributes, outcome, individual call intervals, and metrics. **Dependencies** draws the interactive caller graph and shows captured causal segment edges when available. **Patterns** (with the `ml` feature) groups runs by shape and shows outliers, level shifts and growth fits; **Objects** (with `object-tracking`) explores tracked instances. The structural flame graph, sortable chains and raw records remain available. Filters and selections are linked across views and stored in the URL hash.
+
+For a gzip profile, pass `profile.json.gz` instead. The CLI embeds profiles of up to 50 MiB uncompressed by default. For a larger profile it copies a sidecar file and asks you to select or drop it in the report, because a browser cannot automatically read a neighboring file under `file://`. Use `--inline-limit-mib N` to change that threshold. `--open` launches the generated page with the system opener; `--no-open` overrides `SPANSCOPE_OPEN=1`.
+
+Install the CLI with `cargo install cargo-spanscope --version 0.1.0` to use `cargo spanscope profile.json --output report` from any project. The `cargo run -p cargo-spanscope -- ...` form works from this checkout without installation.
+
+For CI, add `--baseline baseline.json` and repeat thresholds such as
+`--fail-if 'p99:+10%'` or `--fail-if 'self:+15%'`. The command exits
+unsuccessfully on a regression while still producing the offline report;
+`--summary result.md` also writes a Markdown job summary.
+
+Repeat `--export` to create Chrome/Perfetto Trace Event JSON and Speedscope
+artifacts alongside the report, for example `--export chrome:trace.json` and
+`--export speedscope:profile.speedscope.json`.
+
+## Instrument your application
+
+Add the crate to your application's `Cargo.toml`:
+
+```toml
+[dependencies]
+spanscope = { version = "0.1.0", features = ["enabled"] }
+```
+
+For local development against this checkout, replace `version` with `path = "/path/to/spanscope/spanscope"`. Configure output before the first traced call. Flush after worker threads and tasks have joined so their observations are included:
+
+```rust
+use spanscope::config::ConfigBuilder;
+
+#[spanscope::trace(root)]
+fn run_job() {
+    spanscope::attribute!("job.kind", "batch");
+    let result = calculate();
+    spanscope::metric!("result", result);
+    spanscope::outcome!("ok");
+}
+
+#[spanscope::trace]
+fn calculate() -> u64 {
+    let _phase = spanscope::span!("calculation");
+    42
+}
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    ConfigBuilder::new()
+        .output("profile.json")
+        .auto_flush(false)
+        .init()?;
+    run_job();
+    spanscope::export::flush()?;
+    Ok(())
+}
+```
+
+`#[trace(root)]` defines a sampled root invocation; nested `#[trace]` functions and manual `span!` guards form its call chain. `attribute!` adds bounded string dimensions and `outcome!` records a bounded application result on active roots; repeated values use last-write-wins semantics. Async function bodies are measured during polls, with context removed while suspended. To preserve ancestry across a spawned thread, capture `spanscope::context::propagate()` in the parent and call `handle.attach()` in the worker. For a spawned future, use `handle.wrap(future)`. See the runnable [Tokio](spanscope/examples/tokio_tasks.rs) and [Rayon](spanscope/examples/rayon_workers.rs) examples.
+
+You can also configure a program through `spanscope::config::init_from_args(std::env::args())`, which consumes `--spanscope-*` arguments and returns the remaining application arguments. Explicit builder values take precedence over `SPANSCOPE_*` environment variables, then defaults. Output formats are JSON, gzip JSON, and a text summary. Automatic flush is best effort at normal process exit; an explicit `flush()` reports errors and is the reliable choice. The [runtime guide](spanscope/README.md) lists settings and lifecycle details.
+
+## Track objects
+
+With the `object-tracking` feature, a function can record what it does to specific instances:
+
+```rust
+use spanscope::{trace, InstanceId, Tracked};
+
+#[derive(Tracked)]
+struct Cart {
+    #[tracked(id)] id: InstanceId, // or a domain key such as `u64` or `String`
+    items: Vec<Item>,              // `Item` derives `Tracked` too
+    total: u64,
+    #[tracked(skip)] scratch: Vec<u8>,
+}
+
+impl Cart {
+    #[trace(track(self))]
+    fn reprice(&mut self, sku: u64, price: u64) { /* ... */ }
+}
+```
+
+At compile time the macro adds a counter before every statement that reads, writes, borrows, or calls a method on a path of a tracked argument (`self.total`, `self.items[*].price`), with its source line. At run time it hashes each tracked argument as a tree, field by field, on entry and exit. The profile's `objects` section then reports, for each instance and function, how many calls it received, how many of them changed it, which paths changed, and its most recent versions; nested instances with their own `#[tracked(id)]` are attributed separately. `InstanceId` is ignored by equality and hashing, and a clone gets a new ID that records its origin. Without the feature, the derive generates nothing and `InstanceId` is zero-sized.
+
+Limits: tracked arguments must be references, and the function must not return borrowed data. Counters only see accesses written in the tracked function itself; changes made through aliases, called functions, or interior mutability are still detected by the hash comparison but are not attributed to a line. Instances without an ID field are keyed by address and marked approximate. Collections longer than 1024 elements are compared as a whole. `SPANSCOPE_MAX_OBJECTS` (default 10,000) and `SPANSCOPE_OBJECT_HISTORY` (default 64) bound memory. Hashing costs time proportional to the argument's size on every call, and tracking does not follow span sampling. Run `cargo run -p spanscope --features object-tracking --example object_tracking` for a complete example.
+
+## Memoize pure functions
+
+The `memo` feature caches results of pure functions. Unlike the other features it changes behaviour, so it does not imply `enabled` and pulls in no extra dependencies; without it, `#[memo]` returns the function unchanged.
+
+```rust
+use std::sync::Arc;
+
+#[spanscope::memo(
+    key = (fiber.length, frequency, baud_rate), // default: every argument
+    max_entries = 32,                            // or max_bytes = 512 << 20
+    on_full = skip,                              // or clear
+    toggle = "APP_ETA_CACHE",                    // "0" bypasses the cache
+    verify = "APP_ETA_VERIFY",                   // "1" recomputes every hit and panics on mismatch
+    name = "eta",                                // default: module::function
+)]
+fn eta(fiber: &Fiber, frequency: f64, baud_rate: u32) -> Option<Arc<Grid>> { /* ... */ }
+```
+
+Keys are stored in full through `MemoKey`, never as a hash; floats compare by bit pattern, so `0.0` and `-0.0` are different keys. Results are cloned on every hit, so return `Arc<T>` for large values. `Some`/`Ok` results are cached and `None`/`Err` are not, unless `cache_none = true`. `max_bytes` measures keys and values with `MemoSize` (or `value_size = path`), and `verify` compares with `MemoEq` (or `verify_eq = path`). `scope = field(self.cache)` uses a per-instance `spanscope::memo::Cache<K, V>` field whose clone is empty. `spanscope::memo::stats("eta")` and `clear("eta")` address a function by name. With `enabled`, the counters (hits, misses, inserts, evictions, bypasses, verify failures, entries, estimated bytes) are exported in the profile's `memo.functions`, and each traced root records `memo.<name> = hit | miss | bypass`. Place `#[memo]` either above or below `#[trace]`: hits are timed either way.
+
+Limits: generic, `async`, `const`, and `unsafe` functions and `impl Trait` arguments are rejected at compile time. `&mut` arguments must be left out of an explicit `key`, and you are responsible for them not affecting the result. No lock is held while the body runs, so concurrent misses on the same key may compute it more than once; the first result is kept. Run `cargo run -p spanscope --features memo --example memo`.
+
+To find candidates before caching anything, add `memo_probe` to a traced function (needs only `enabled`):
+
+```rust
+#[spanscope::trace(memo_probe(result))]           // or memo_probe, memo_probe(key = (a, b), result)
+fn propagate(state: &State, hops: u32) -> Option<Path> { /* ... */ }
+```
+
+Each observed call records a 64-bit fingerprint of its arguments (through `MemoKey`, receiver excluded by default) and, with `result`, of its return value. The profile's `memo.probes` reports per span the calls, distinct argument fingerprints, repeated calls, and the inclusive and exclusive time spent on repetitions, which is what a cache could save. Export turns them into deterministic insights: `memo.candidate` when at least 10 calls repeat their arguments at least half the time, and `memo.inconsistent` when the same arguments produced different results, a sign that the function depends on outside state. Fingerprints are hashes, so these are hints: check purity, for example with `#[memo]` verify mode, before caching. Up to 100,000 distinct fingerprints are kept per span; each call takes a lock and clones its key; sampled-out calls and calls that unwind are not recorded; async functions and `track(...)` are not supported.
+
+## Find patterns across runs
+
+With the `ml` feature, export adds statistical sections to `analysis.sections` and turns strong findings into insights:
+
+| Section | Method | Finds |
+| --- | --- | --- |
+| `clusters` | k-means over each run's per-routine time shares and log duration; k by silhouette, no cluster smaller than 3 runs | Distinct shapes of execution and the routines that set them apart |
+| `anomalies` | median/MAD robust z of log duration within each shape | Runs much slower or faster than runs like them |
+| `changepoints` | binary segmentation with a Mann–Whitney rank statistic over runs in start order | When run duration shifted, and by how much |
+| `complexity` | least-squares fits of log n, n, n log n, n² against numeric root metrics, for run duration and top routines | Routines that grow quadratically with input size |
+| `object_churn` | robust z of version counts within each tracked type | Instances that change far more than their peers |
+
+Everything is deterministic and dependency-free, runs offline at export, and reports `insufficient_data` when there are too few runs. Try `cargo run -p spanscope --features ml,object-tracking --example ml_patterns`.
+
+## Features and current limits
+
+| Feature | Effect |
+| --- | --- |
+| default | Instrumentation is disabled; annotated functions remain usable. |
+| `enabled` | Collects sync/async spans, metrics, root samples, and profile export. |
+| `serialization`, `schema` | Expose profile contracts and schema generation without requiring collection. |
+| `memory` | Samples Linux process RSS at root entry and exit. |
+| `alloc-tracker` | Adds an opt-in `TrackingAllocator` wrapper for gross allocation counts and requested bytes; the application must install it as its global allocator. |
+| `viewer` | With `SPANSCOPE_OPEN=1`, emits the offline HTML alongside a runtime-exported profile and asks the system to open it. |
+| `ml` | Adds pattern analysis at export: run clustering, outlier runs, duration level shifts, growth-model fits against root metrics, and object churn, each with evidence-backed insights. |
+| `object-tracking` | Records field accesses and value changes of `#[derive(Tracked)]` instances passed to `#[trace(track(...))]` functions. Implies `enabled`. |
+| `memo` | Activates `#[memo]` function memoization. Does not imply `enabled`; combined with it, exports per-function cache counters. |
+
+The profile contains exact integer counters, but charts may use approximate floating-point coordinates for very large values. Root interval evidence can be partial or truncated; the flame graph and caller network are aggregates, **not an exact concurrent critical path**. The Timeline view only computes a longest path from explicit causal segments and labels incomplete evidence accordingly; the current runtime does not yet emit those dependency edges. The individual-call list only shows retained evidence. Deterministic insights describe observed evidence rather than proving a defect, and pattern sections report insufficient data rather than guessing. File reading, gzip decompression, validation, and indexing run in a worker, but the complete profile and index are still held in memory; the 50 MiB inline setting is a delivery threshold, not a tested capacity limit. Chromium browsers exposing the File System Access API also show **Live follow**, which reloads a selected profile when it changes. Synchronous instrumentation has not yet met the project's <50 ns median target.
+
+## Develop and verify
+
+```sh
+cargo test --workspace --all-features --locked
+cargo fmt --all --check
+cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+npm ci --prefix viewer
+npm run build --prefix viewer
+npm test --prefix viewer
+npm run test:e2e --prefix viewer
+python3 scripts/check_contract.py
+python3 scripts/check_packages.py
+```
+
+The viewer build creates byte-identical single-file HTML assets embedded by the Rust crates. Browser tests use Chromium through Playwright. `check_contract.py` needs the packages in [scripts/requirements.txt](scripts/requirements.txt). The [runtime guide](spanscope/README.md), [CLI guide](cargo-spanscope/README.md), [viewer guide](viewer/README.md), and [profile schema](schema/profile-v1.schema.json) document the public interfaces.
+
+## Contributing
+
+Contributions are welcome: see [CONTRIBUTING.md](CONTRIBUTING.md) and the
+[Code of Conduct](CODE_OF_CONDUCT.md). Security problems go through
+[private reporting](SECURITY.md).
+
+## License
+
+Licensed under either [MIT](LICENSE-MIT) or [Apache-2.0](LICENSE-APACHE), at your option. Each Rust package includes both license texts.
+
+The HTML report generated by `cargo-spanscope` embeds third-party JavaScript
+libraries. Their licenses are reproduced in
+[THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md), which is generated from the
+production build by `npm run notices --prefix viewer`, shipped inside both
+crates and embedded in every generated report.
+
+## Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=GNP50/spanscope&type=Date)](https://star-history.com/#GNP50/spanscope&Date)

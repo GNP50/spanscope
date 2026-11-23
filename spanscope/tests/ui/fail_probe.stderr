@@ -1,0 +1,11 @@
+error: memo_probe supports synchronous functions only
+ --> tests/ui/fail_probe.rs:2:1
+  |
+2 | async fn fetch(value: u32) -> u32 {
+  | ^^^^^
+
+error: expected memo_probe(result) or memo_probe(key = (...), result)
+ --> tests/ui/fail_probe.rs:6:31
+  |
+6 | #[spanscope::trace(memo_probe(results))]
+  |                               ^^^^^^^

@@ -1,0 +1,184 @@
+{
+  "schema_version": 1,
+  "meta": {
+    "program": "synthetic-contract-fixture",
+    "version": null,
+    "git_sha": null,
+    "host": {
+      "os": "linux",
+      "arch": "x86_64"
+    },
+    "started_at": "2026-09-19T12:00:00Z",
+    "duration_ns": 1000,
+    "threads": 1,
+    "features": [],
+    "capture": {
+      "sample_rate": 1.0,
+      "sampled_out_roots": 0,
+      "evicted_roots": 0,
+      "dropped_records": 0,
+      "snapshot_complete": true,
+      "pending_threads": [],
+      "rss_supported": false
+    }
+  },
+  "spans": [
+    {
+      "id": 0,
+      "name": "fixture::root",
+      "file": "synthetic.rs",
+      "line": 1,
+      "tags": []
+    },
+    {
+      "id": 1,
+      "name": "fixture::child",
+      "file": "synthetic.rs",
+      "line": 2,
+      "tags": []
+    }
+  ],
+  "chains": [
+    {
+      "id": 0,
+      "path": [
+        0
+      ],
+      "count": 1,
+      "total_ns": 100,
+      "min_ns": 100,
+      "max_ns": 100,
+      "mean_ns": 100.0,
+      "std_ns": 0.0,
+      "m2_ns2": 0.0,
+      "p50_ns": 100,
+      "p90_ns": 100,
+      "p99_ns": 100,
+      "self_ns": 60,
+      "self_time_kind": "synchronous",
+      "active_ns": 100,
+      "poll_count": 0,
+      "cancelled": 0,
+      "alloc_bytes": 0,
+      "allocs": 0,
+      "histogram": {
+        "algorithm": "synthetic-exact",
+        "precision": "one observation per exact bucket; fixture only",
+        "buckets": [
+          {
+            "upper_ns": 100,
+            "count": 1
+          }
+        ]
+      }
+    },
+    {
+      "id": 1,
+      "path": [
+        0,
+        1
+      ],
+      "count": 1,
+      "total_ns": 40,
+      "min_ns": 40,
+      "max_ns": 40,
+      "mean_ns": 40.0,
+      "std_ns": 0.0,
+      "m2_ns2": 0.0,
+      "p50_ns": 40,
+      "p90_ns": 40,
+      "p99_ns": 40,
+      "self_ns": 40,
+      "self_time_kind": "synchronous",
+      "active_ns": 40,
+      "poll_count": 0,
+      "cancelled": 0,
+      "alloc_bytes": 0,
+      "allocs": 0,
+      "histogram": {
+        "algorithm": "synthetic-exact",
+        "precision": "one observation per exact bucket; fixture only",
+        "buckets": [
+          {
+            "upper_ns": 40,
+            "count": 1
+          }
+        ]
+      }
+    }
+  ],
+  "graph": {
+    "nodes": [
+      {
+        "span": 0,
+        "total_ns": 100,
+        "self_ns": 60,
+        "calls": 1
+      },
+      {
+        "span": 1,
+        "total_ns": 40,
+        "self_ns": 40,
+        "calls": 1
+      }
+    ],
+    "edges": [
+      {
+        "from": 0,
+        "to": 1,
+        "calls": 1,
+        "total_ns": 40
+      }
+    ]
+  },
+  "roots": [
+    {
+      "uid": "00000000-0000-4000-8000-000000000001",
+      "span": 0,
+      "thread": 0,
+      "t_start_ns": 10,
+      "duration_ns": 100,
+      "rss_entry_kb": 0,
+      "rss_exit_kb": 0,
+      "metrics": {
+        "input_size": 16.0
+      },
+      "chains": [
+        [
+          0,
+          1,
+          100
+        ],
+        [
+          1,
+          1,
+          40
+        ]
+      ],
+      "chain_self_ns": {
+        "0": 60,
+        "1": 40
+      },
+      "completion": "complete",
+      "execution": {
+        "status": "not_captured",
+        "invocations": [],
+        "dependencies": [],
+        "segments": []
+      }
+    }
+  ],
+  "threads": [
+    {
+      "id": 0,
+      "name": "main",
+      "busy_ns": 100,
+      "exited": true
+    }
+  ],
+  "analysis": {
+    "status": "skipped",
+    "insights": [],
+    "sections": {}
+  }
+}

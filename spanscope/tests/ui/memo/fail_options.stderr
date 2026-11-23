@@ -1,0 +1,17 @@
+error: max_entries and max_bytes are mutually exclusive
+ --> tests/ui/memo/fail_options.rs:1:48
+  |
+1 | #[spanscope::memo(max_entries = 4, max_bytes = 1024)]
+  |                                                ^^^^
+
+error: on_full must be `clear` or `skip`
+ --> tests/ui/memo/fail_options.rs:6:29
+  |
+6 | #[spanscope::memo(on_full = evict)]
+  |                             ^^^^^
+
+error: unknown memo option; expected key, max_entries, max_bytes, on_full, toggle, verify, verify_eq, value_size, name, scope, or cache_none
+  --> tests/ui/memo/fail_options.rs:11:19
+   |
+11 | #[spanscope::memo(lifetime = 3)]
+   |                   ^^^^^^^^

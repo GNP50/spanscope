@@ -1,0 +1,44 @@
+version: 2
+
+# Group minor and patch updates. Major version updates need separate review.
+updates:
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3
+    groups:
+      cargo:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+      # Hold trybuild here until a Rust 1.80-compatible update is verified.
+      - dependency-name: trybuild
+        versions: ["> 1.0.101"]
+      # Newer releases pull in TOML crates that Cargo 1.80 cannot parse.
+      - dependency-name: proc-macro-crate
+        versions: ["> 3.2.0"]
+
+  - package-ecosystem: npm
+    directory: /viewer
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3
+    groups:
+      viewer:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3
+    groups:
+      actions:
+        patterns: ["*"]
